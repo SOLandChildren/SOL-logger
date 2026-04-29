@@ -10,7 +10,7 @@ __pycache__/
 experiments/testfile.ipynb
 logger/search-engine/test.ipynb
 # Local generated logs
-logger/logs/
+logger/logs/*
 
 # Local secrets
 logger/search-app/service_account.json
