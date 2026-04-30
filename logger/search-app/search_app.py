@@ -1,8 +1,9 @@
 from urllib import response
 from flask import Flask, render_template, url_for, request, session, redirect, jsonify
+from flask_session import Session
+from flask_cors import CORS
 import requests, json
 from forms import SearchForm
-from flask_cors import CORS
 import collections
 import math
 import os
@@ -12,16 +13,49 @@ import re
 from spellchecker import SpellChecker
 from time import time
 
-
 app = Flask(__name__)
 
-CORS(app)
+# -------------------------------------------------
+# 1. Core app + session configuration FIRST
+# -------------------------------------------------
+app.config["SECRET_KEY"] = "OtulwLo7gQ"
 
-app.config['SECRET_KEY'] = 'OtulwLo7gQ'       # Please set a secret key
 app.config.update(
-    SESSION_COOKIE_SECURE=False,    
-    SESSION_COOKIE_SAMESITE='Lax', 
+    SESSION_COOKIE_SECURE=False,      # True in production with HTTPS
+    SESSION_COOKIE_SAMESITE="Lax",
 )
+
+app.config["SESSION_TYPE"] = "filesystem"   # or "redis"
+app.config["SESSION_PERMANENT"] = False
+app.config["SESSION_USE_SIGNER"] = True
+
+# Initialize server-side sessions
+Session(app)
+
+# -------------------------------------------------
+# 2. Enable CORS LAST
+# -------------------------------------------------
+CORS(app, supports_credentials=True)
+
+## old implementation for initialising the Flask APP, keeping it in case new implementation breaks
+# app = Flask(__name__)
+
+# CORS(app)
+
+# app.config['SECRET_KEY'] = 'OtulwLo7gQ'       
+# app.config.update(
+#     SESSION_COOKIE_SECURE=False,    
+#     SESSION_COOKIE_SAMESITE='Lax', 
+# )
+
+# Session(app)
+
+# f = open("API_keys.json")
+# data = json.load(f)
+
+# API_KEY = data["serp_api"]["api_key"]
+# SERP_endpoint = data["serp_api"]["SERP_endpoint"]
+# f.close()
 
 db_url = "http://search_engine:7002"
 # rpp = 20  # Results per Page (Default: 20) 
@@ -62,12 +96,7 @@ def sanitize_query(query):
     # except:
     #     corrected_query = cleaned_query
     
-    # f = open("API_keys.json")
-    # data = json.load(f)
-
-    # API_KEY = data["serp_api"]["api_key"]
-    # SERP_endpoint = data["serp_api"]["SERP_endpoint"]
-    # f.close()
+    ## using external API - edit to suit the specific API used
 
     # serpapi_payload = {
     #     "engine": "google",
@@ -159,78 +188,140 @@ def task():
 
     return render_template("task.html", show_search=False, task_number = task_number, topic = topic, topic_title = topic_title, user_id = user_id)
 
-
 @app.route("/result", methods=['GET', 'POST'])
 def result():
 
+    # -----------------------------
+    # POST → run search ONCE
+    # -----------------------------
     if request.method == "POST":
-        query = request.form['query']
+        query = request.form["query"]
         page = 1
+
+        query, serpapi_query = sanitize_query(query)
+
+        url = "/ranking?query="
+        url_affix = "&rpp="
+        maxres = '100' # max 10 pages with max 10 results each
+        query, serpapi_query = sanitize_query(query)
+
+        end_query = db_url + url + query + url_affix + maxres
+
+        try:
+            response = requests.get(end_query)
+            search_results = response.json()["itemlist"]
+        except requests.ConnectionError:
+            return "Connection Error"
+
+        # Store results for pagination
+        # TODO: optimise for CACHE based implementation
+        session["search_results"] = search_results
+        session["query"] = query
+        session["serpapi_query"] = serpapi_query
+
+        # return redirect(url_for("result", page=1))
+
+    # -----------------------------
+    # GET → paginate only
+    # -----------------------------
     else:
-        query = request.args.get("query")
         page = int(request.args.get("page", 1))
+        search_results = session.get("search_results", [])
+        query = session.get("query")
+        serpapi_query = session.get("serpapi_query")
+
+    if not search_results:
+        return render_template(
+            "no_result.html",
+            title="No results found",
+            query=query,
+            serpapi_query=serpapi_query,
+            show_search=True
+        )
+
+    total_results = len(search_results)
+    total_pages = min(10, math.ceil(total_results / rpp))
+
+    start = (page - 1) * rpp
+    end = start + rpp
+
+    return render_template(
+        "search.html",
+        title="Search Results",
+        search_results=search_results[start:end],
+        query=query,
+        serpapi_query=serpapi_query,
+        page=page,
+        total_pages=total_pages,
+        show_search=True
+    )
+
+#     ## when using external API for ranking - edit to suit the API used
+#           TODO: optimise to make API call only for POST method, and store results (max 100 per query) in session (ideally through a CACHE-based implementation)
+#           TODO: search results page might have to be edited as per JSON response keys
+
+#     # payload = {
+
+#     #     "engine": "google",
+#     #     "q": query,
+#     #     "start": page * 10,
+#     #     "num": 10,
+#     #     "filter": 0,
+#     #     "api_key": API_KEY
+
+#     #     }
+
+#     # SERP_response = requests.get(url=SERP_endpoint, params=payload)
+
+#     # search_results = SERP_response.json()
+
+#     # if len(search_results["organic_results"]) == 0:
+#     #         return render_template("no_result.html", title="No results found", query= query, show_search=True, reminder=reminder)
+#     # else:
+#     #     total_results = len(search_results["organic_results"])
+#     #     total_pages = min(10, math.ceil(total_results / rpp))
+#     #     start = (page - 1) * rpp
+#     #     end = start + rpp
+#     #     return render_template("search.html", title="Search Results", search_results = search_results['itemlist'][start:end], query=query, page=page, total_pages = total_pages, show_search=True, reminder=reminder)
+
+## old ranking route implementation, kept it here to revert back in case new implementation breaks
+# @app.route("/result", methods=['GET', 'POST'])
+# def result():
+
+#     if request.method == "POST":
+#         query = request.form['query']
+#         page = 1
+#     else:
+#         query = request.args.get("query")
+#         page = int(request.args.get("page", 1))
     
-    url = "/ranking?query="
-    url_affix = "&rpp="
-    maxres = '100' # max 10 pages with max 10 results each
-    rpp = 10 # results per page; may be changed later
-    query, serpapi_query = sanitize_query(query)
+#     url = "/ranking?query="
+#     url_affix = "&rpp="
+#     maxres = '100' # max 10 pages with max 10 results each
+#     rpp = 10 # results per page; may be changed later
+#     query, serpapi_query = sanitize_query(query)
 
-    end_query = db_url + url + query + url_affix + maxres
+#     end_query = db_url + url + query + url_affix + maxres
     
-    try:
-        response = requests.get(end_query)
-    except requests.ConnectionError:
-        return "Connection Error" 
+#     try:
+#         response = requests.get(end_query)
+#     except requests.ConnectionError:
+#         return "Connection Error" 
 
-    search_results = response.json()
+#     search_results = response.json()
 
-    reminder = USER_TOPICS.get(session.get('user_id'), {}).get(str(session.get('task_number'))+'_full')
+#     reminder = USER_TOPICS.get(session.get('user_id'), {}).get(str(session.get('task_number'))+'_full')
     
-    if len(search_results["itemlist"]) == 0:
-            return render_template("no_result.html", title="No results found", query= query, serpapi_query=serpapi_query, show_search=True, reminder=reminder)
-    else:
-        total_results = len(search_results["itemlist"])
-        total_pages = min(10, math.ceil(total_results / rpp))
-        start = (page - 1) * rpp
-        end = start + rpp
-        return render_template("search.html", title="Search Results", search_results = search_results['itemlist'][start:end], query=query, serpapi_query = serpapi_query, page=page, total_pages = total_pages, show_search=True, reminder=reminder)
-
-    # f = open("API_keys.json")
-    # data = json.load(f)
-
-    # API_KEY = data["serp_api"]["api_key"]
-    # SERP_endpoint = data["serp_api"]["SERP_endpoint"]
-    # f.close()
-
-    # print(API_KEY, SERP_endpoint)
-
-    # payload = {
-
-    #     "engine": "google",
-    #     "q": query,
-    #     "start": page * 10,
-    #     "num": 10,
-    #     "filter": 0,
-    #     "api_key": API_KEY
-
-    #     }
-
-    # SERP_response = requests.get(url=SERP_endpoint, params=payload)
-
-    # search_results = SERP_response.json()
-
-    # if len(search_results["organic_results"]) == 0:
-    #         return render_template("no_result.html", title="No results found", query= query, show_search=True, reminder=reminder)
-    # else:
-    #     total_results = len(search_results["organic_results"])
-    #     total_pages = min(10, math.ceil(total_results / rpp))
-    #     start = (page - 1) * rpp
-    #     end = start + rpp
-    #     return render_template("search.html", title="Search Results", search_results = search_results['itemlist'][start:end], query=query, page=page, total_pages = total_pages, show_search=True, reminder=reminder)
+#     if len(search_results["itemlist"]) == 0:
+#             return render_template("no_result.html", title="No results found", query= query, serpapi_query=serpapi_query, show_search=True, reminder=reminder)
+#     else:
+#         total_results = len(search_results["itemlist"])
+#         total_pages = min(10, math.ceil(total_results / rpp))
+#         start = (page - 1) * rpp
+#         end = start + rpp
+#         return render_template("search.html", title="Search Results", search_results = search_results['itemlist'][start:end], query=query, serpapi_query = serpapi_query, page=page, total_pages = total_pages, show_search=True, reminder=reminder)
 
 @app.route("/autocomplete")
-
 def autocomplete():
     query = request.args.get("query")
 

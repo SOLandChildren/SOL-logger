@@ -153,15 +153,6 @@ if(querySuggestionsList){
 }
 
 
-// const querySuggestionsBox = document.getElementById("query-suggestions-box");
-// if(querySuggestionsBox){
-//     querySuggestionsBox.addEventListener("mouseenter", ()=>{
-//         studyLogger.logEvent("hoverOverQuerySuggestions", {
-//             query: "query"
-//         });
-//     });
-// } 
-
 const searchbar = document.getElementById("search-bar")
 if (searchbar) {
     searchbar.addEventListener("submit", (e) => {
