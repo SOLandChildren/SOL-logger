@@ -201,6 +201,8 @@ function logSERP() {
             const query = result.getAttribute("query");
             const docid = result.getAttribute("base_ir");
             const rank = result.id.split("-")[1];
+            const title = document.getElementById(`abstract-link-${rank}`).textContent;
+            const snippetText = document.getElementById(`abstract-preview-${rank}`).textContent;
             const page = result.getAttribute("page");
             const url = document.getElementById(`abstract-link-${rank}`).getAttribute("href");
             const searchAppLocation = getSearchAppLocation(query, page);
@@ -208,6 +210,8 @@ function logSERP() {
             studyLogger.logEvent("searchResultGenerated", {
                     query: query,
                     docid: docid,
+                    title: title,
+                    snippet: snippetText,
                     rank: rank,
                     page: page,
                     url: url,
