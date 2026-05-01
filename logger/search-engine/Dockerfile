@@ -26,7 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.9
+RUN curl -sS https://bootstrap.pypa.io/pip/3.9/get-pip.py | python3.9
 
 COPY requirements.txt requirements.txt
 
