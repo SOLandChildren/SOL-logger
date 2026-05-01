@@ -1,21 +1,16 @@
 {% extends "layout.html" %}
 {% block content %}
 
-<!-- "Are you ready?" overlay — gates the search bar until confirmed -->
-<div id="readyOverlay">
-  <div class="overlay-inner">
-    <h2>Sei pronto per iniziare?</h2>
-    <p>Una volta iniziato, la tua sessione di ricerca verra registrata. Prenditi il tempo necessario per leggere il compito prima di procedere.</p>
-    <button id="ready-btn" onclick="dismissReadyOverlay()">Sono pronto</button>
-  </div>
-</div>
+<div class="app-page">
+  <div class="app-toolbar"></div>
 
-<div class="home-search-center">
-    <div class="home-search-title">
-      <span class="sol-blue">S</span><span class="sol-red">O</span><span class="sol-yellow">L</span> <span class="sol-blue">S</span><span class="sol-red">e</span><span class="sol-yellow">a</span><span class="sol-blue">r</span><span class="sol-green">c</span><span class="sol-red">h</span>
-    </div>
+  <section class="app-panel search-panel">
+    <div class="home-search-center">
+      <div class="home-search-title">
+        <span class="sol-red">C</span><span class="sol-green">e</span><span class="sol-blue">r</span><span class="sol-yellow">c</span><span class="sol-red">a</span>
+      </div>
 
-    <form method="POST" action="{{ url_for('result') }}" id="search-bar" class="home-search-form">
+      <form method="POST" action="{{ url_for('result') }}" id="search-bar" class="home-search-form">
         {{ form.hidden_tag() }}
         <input
             type="search"
@@ -23,17 +18,15 @@
             id="search-box"
             placeholder="Cerca..."
             aria-label="Cerca"
-            autocomplete="off">
-        <button type="submit" name="submit-box" id="submit-box">Cerca</button>
-    </form>
+            autocomplete="off"
+            list="query-suggestions">
+        <datalist id="query-suggestions"></datalist>
+        <button type="submit" name="submit-box" id="submit-box" class="app-btn app-btn-primary">Cerca</button>
+      </form>
+      <p class="search-error-message" {% if not search_error %}hidden{% endif %}>
+        {{ search_error or "Inserisci una domanda prima di cercare." }}
+      </p>
+    </div>
+  </section>
 </div>
-
-<script>
-function dismissReadyOverlay() {
-    document.getElementById('readyOverlay').style.display = 'none';
-    if (window.studyLogger) {
-        studyLogger.logEvent("readyToBeginConfirmed");
-    }
-}
-</script>
 {% endblock content %}

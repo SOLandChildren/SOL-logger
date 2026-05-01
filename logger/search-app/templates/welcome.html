@@ -2,13 +2,12 @@
 {% block title %}Welcome{% endblock %}
 {% block content %}
 
-<div class="welcome-container">
+<div class="welcome-container app-blue-screen">
     <div class="welcome-logo">
+        <span class="welcome-logo-small">Cerca con</span>
         <span class="sol-blue">S</span><span class="sol-red">O</span><span class="sol-yellow">L</span>
-        <span class="sol-blue">S</span><span class="sol-red">e</span><span class="sol-yellow">a</span><span class="sol-blue">r</span><span class="sol-green">c</span><span class="sol-red">h</span>
     </div>
-    <p class="welcome-subtitle">Benvenuto nello studio di ricerca</p>
-    <a href="{{ url_for('start_page') }}" class="welcome-start-btn">
+    <a href="{{ url_for('start_page') }}" class="app-btn app-btn-warm welcome-start-btn">
         Inizia
     </a>
 </div>

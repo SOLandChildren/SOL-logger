@@ -2,26 +2,39 @@
 {% block title %}Compito{% endblock %}
 {% block content %}
 
-<div class="task-container">
-    <h2>Compito {{ task_number }}: {{ topic_title }}</h2>
-    <p>Immagina di dover scrivere un saggio di opinione sul seguente argomento:</p>
-    <p><b>{{ topic }}</b></p>
-    <p>Un saggio di opinione presenta il tuo punto di vista personale su una questione e lo supporta con ragionamenti chiari, affrontando anche gli argomenti della parte opposta.</p>
-    <p>Per prepararti, il tuo compito consiste nel raccogliere argomenti che <b>sostengano e mettano in discussione</b> la tua posizione. Questo ti aiutera a presentare le tue idee con chiarezza e ad affrontare possibili controargomentazioni.</p>
-    <p>Cerca argomenti convincenti, ben ragionati e che affrontino diverse prospettive, come aspetti sociali, etici, legali o pratici. Cerca di trovare <b>piu argomenti possibili</b> invece di fermarti al primo punto rilevante che trovi. Non devi essere d'accordo con tutti gli argomenti che trovi; l'obiettivo e sviluppare una comprensione completa della questione.</p>
-    <p>Usa il sistema di ricerca per esplorare e identificare argomenti pertinenti. <b>Segna gli argomenti rilevanti</b> usando i pulsanti "pro" e "contro" sul lato destro di ogni argomento.</p>
-    <p>Hai 10 minuti per questo compito. Quando hai finito, o quando scade il tempo, clicca il pulsante "Fine compito" per procedere.</p>
+<div class="app-page">
+  <div class="app-toolbar"></div>
 
-    <div id="task-wrapper"
-         data-user-id="{{ user_id }}"
-         data-task-num="{{ task_number }}"
-         data-topic="{{ topic }}">
-    </div>
+  <section class="app-panel task-panel">
+    <div class="task-container">
+        <h1 class="task-number">#{{ task_number }}</h1>
 
-    <div class="task-action">
-        <form action="{{ url_for('search_page') }}" method="get">
-            <button id="task-btn" type="submit" class="btn btn-primary">Inizia compito {{ task_number }}</button>
-        </form>
+        {% if task_number == '1' %}
+        <p>State per iniziare una nuova ricerca.</p>
+        <p>Ci sono tante cose da scoprire: leggete bene la domanda e usate il motore di ricerca.</p>
+        {% elif task_number == '2' %}
+        <p>La prima domanda era facile, ma ora aumentiamo la difficolta.</p>
+        {% else %}
+        <p>Ormai siete ricercatrici e ricercatori nati, siamo all'ultima domanda.</p>
+        <p>Se troverete la risposta a questa domanda, avrete finito il gioco e potrete scoprire l'ultimo pezzo mancante.</p>
+        {% endif %}
+
+        <p class="task-instruction">Usate il motore di ricerca per trovare la risposta a questa domanda:</p>
+        <p class="task-question">{{ topic }}</p>
+        <p>Scrivete la vostra risposta per sbloccare la domanda successiva!</p>
+
+        <div id="task-wrapper"
+             data-user-id="{{ user_id }}"
+             data-task-num="{{ task_number }}"
+             data-topic="{{ topic }}">
+        </div>
+
+        <div class="task-action">
+            <form action="{{ url_for('search_page') }}" method="get">
+                <button id="task-btn" type="submit" class="app-btn app-btn-primary">Inizia</button>
+            </form>
+        </div>
     </div>
+  </section>
 </div>
 {% endblock %}

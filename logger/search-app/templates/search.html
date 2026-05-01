@@ -1,12 +1,51 @@
 {% extends "layout.html" %}
 {% block content %}
-<!-- Container Info-->
- {% if query == serpapi_query %}
-<!-- <small class="container-info"><p>Search Results for: <b>{{ query|safe }}</b></small> -->
-  {% elif page==1 %}
-  <small class="container-info"><p>Did you mean: <a id="did-you-mean" href="{{ url_for('result', query=serpapi_query, page=1)|safe }}"><b>{{ serpapi_query|safe }}</b></a></p></small>
-  {% else %}
-  {% endif %}
+<div class="app-page">
+  <div class="app-toolbar">
+    <a href="{{ url_for('search_page') }}" class="app-btn app-btn-back">&larr; Indietro</a>
+    {% if search_results or allow_answer_without_results_for_testing %}
+      <button type="button"
+              onclick="openAnswerModalDirect()"
+              class="app-btn app-btn-warm"
+              id="end-task-btn">
+        Scrivi la risposta
+      </button>
+    {% endif %}
+  </div>
+
+  <section class="app-panel serp-panel">
+    <div class="serp-search-wrap">
+      <div class="serp-search-title">
+        <span class="sol-red">C</span><span class="sol-green">e</span><span class="sol-blue">r</span><span class="sol-yellow">c</span><span class="sol-red">a</span>
+      </div>
+
+      <form method="POST" action="{{ url_for('result') }}" id="search-bar" class="home-search-form">
+        {{ form.hidden_tag() }}
+        <input
+            type="search"
+            name="query"
+            id="search-box"
+            placeholder="Cerca..."
+            aria-label="Cerca"
+            autocomplete="off"
+            list="query-suggestions"
+            value="{{ query if query is defined else '' }}">
+        <datalist id="query-suggestions"></datalist>
+        <button type="submit" name="submit-box" id="submit-box" class="app-btn app-btn-primary">Cerca</button>
+      </form>
+      <p class="search-error-message" hidden>Inserisci una domanda prima di cercare.</p>
+    </div>
+
+    {% if no_results_message %}
+    <div class="no-results-inline" role="status">
+      <p>Non ci sono risultati per la vostra domanda.<br>Provate a fare un'altra domanda!</p>
+    </div>
+    {% else %}
+      {% if query == serpapi_query %}
+      {% elif page==1 %}
+      <small class="container-info"><p>Forse cercavi: <a id="did-you-mean" href="{{ url_for('result', query=serpapi_query, page=1)|safe }}"><b>{{ serpapi_query|safe }}</b></a></p></small>
+      {% else %}
+      {% endif %}
 
 {% for s in search_results %}
   <article class="media content-section" id="result-{{ loop.index }}" base_ir="{{ s.docid|safe }}" query="{{ query|safe }}" page="{{ page|safe }}">
@@ -63,5 +102,8 @@
   </ul>
 </nav>
 {% endif %}
+    {% endif %}
+  </section>
+</div>
 
 {% endblock content %}

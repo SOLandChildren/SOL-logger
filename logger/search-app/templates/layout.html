@@ -14,72 +14,8 @@
     {% endif %}
 </head>
 <body>
-    {% if show_search and query is defined %}
-    <header class="site-header">
-        <nav class="navbar navbar-expand-md navbar-light bg-steel fixed-top">
-            <div class="container-fluid">
-                <a class="navbar-brand me-2" href="{{ url_for('search_page') }}" id="app-home"><span class="sol-blue">S</span><span class="sol-red">O</span><span class="sol-yellow">L</span> <span class="sol-blue">S</span><span class="sol-red">e</span><span class="sol-yellow">a</span><span class="sol-blue">r</span><span class="sol-green">c</span><span class="sol-red">h</span></a>
-
-                <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarToggle" aria-controls="navbarToggle" aria-expanded="false" aria-label="Toggle navigation">
-                    <span class="navbar-toggler-icon"></span>
-                </button>
-
-                <div class="collapse navbar-collapse" id="navbarToggle">
-                    <div class="navbar-nav mr-auto"></div>
-
-                <!-- Navbar SEARCHBAR-->
-                <div class="nav-searchbar">
-                <form method="POST" action="{{ url_for('result') }}" class="d-flex" id="search-bar">
-                    {{ form.hidden_tag() }}
-                    <input class="form-control me-4"
-                        type="search"
-                        placeholder="Cerca..."
-                        aria-label="Cerca"
-                        name="query"
-                        id="search-box"
-                        list="query-suggestions"
-                        autocomplete="off"
-                        value="{{ query if query is defined else '' }}">
-                    <datalist id="query-suggestions"></datalist>
-                    <button class="btn btn-outline-secondary"
-                            type="submit"
-                            name="submit-box"
-                            id="submit-box">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="#5f6368"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>Cerca
-                    </button>
-                </form>
-            </div>
-            </div>
-        </nav>
-    </header>
-    {% endif %}
-
-    <main role="main" class="container {% if query is not defined %}home-main{% endif %}">
-        {% if query is defined %}
-        <div class="results-shell">
-            <aside class="results-sidebar">
-                <h5>Hai finito di cercare?</h5>
-                <p>Premi il pulsante qui sotto quando sei sicuro di aver trovato le risposte che cercavi.</p>
-                <button type="submit"
-                        onclick="openEndTaskModal()"
-                        class="btn btn-danger mt-3"
-                        id="end-task-btn">
-                    Fine compito
-                </button>
-            </aside>
-            <section class="results-main">
-        {% else %}
-            <div class="home-shell">
-        {% endif %}
-
+    <main role="main" class="app-main">
         {% block content %}{% endblock content %}
-
-        {% if query is defined %}
-            </section>
-        </div>
-        {% else %}
-            </div>
-        {% endif %}
     </main>
 
     <div id="endTaskModal" class="modal">
@@ -95,9 +31,10 @@
 
         <div class="modal-buttons">
         <!-- <button id = "yes-end-btn" class="btn btn-primary" onclick="closeEndTaskModal();openFeedbackModal()">Yes, end task</button> -->
-        <button id = "yes-end-btn" class="btn btn-primary" onclick="closeEndTaskModal();openFeedbackModal()">Si, termina</button>
+        <button id = "yes-end-btn" class="app-btn app-btn-primary" onclick="closeEndTaskModal();openFeedbackModal()">Si, termina</button>
 
-        <button id = "no-end-btn" onclick="closeEndTaskModal()" class="btn btn-outline-secondary">No, continua a cercare</button>
+        <button id = "no-end-btn" onclick="closeEndTaskModal()" class="app-btn app-btn-secondary">No, continua a cercare</button>
+        </div>
         </div>
     </div>
 
@@ -109,10 +46,11 @@
 
             <div id="feedback">
                 <textarea id="textarea_feedback" name="feedbackText" cols="40" rows="5"></textarea>
+                <p id="answer-error-message" class="form-error" hidden>Inserisci una risposta</p>
             </div>
 
             <div class="modal-buttons">
-                <button id="feedback-btn" class="btn btn-primary">Invia e termina</button>
+                <button id="feedback-btn" class="app-btn app-btn-primary">Invia la risposta</button>
             </div>
         </div>
     </div>
@@ -123,16 +61,18 @@
 
     <script>
         // const validIDs = {{ ["ducks", "roads", "trees"] | tojson }};
-        const input = document.getElementById("search-box");
-        const datalist = document.getElementById("query-suggestions");
+        const searchInput = document.getElementById("search-box");
+        const searchDatalist = document.getElementById("query-suggestions");
 
         let debounceTimer;
         window.autoCompleteSuggestions = [];
 
-        if (input) {
-        input.addEventListener("input", () => {
-            const query = input.value.trim();
-            datalist.innerHTML = "";
+        if (searchInput) {
+        searchInput.addEventListener("input", () => {
+            const query = searchInput.value.trim();
+            if (searchDatalist) {
+                searchDatalist.innerHTML = "";
+            }
 
             if (query.length < 3) return;
 
@@ -143,6 +83,26 @@
             }, 300);
         });
         } // end if (input)
+
+        const searchForm = document.getElementById("search-bar");
+        if (searchForm && searchInput) {
+            searchForm.addEventListener("submit", (event) => {
+                if (searchInput.value.trim()) return;
+
+                event.preventDefault();
+                event.stopImmediatePropagation();
+
+                let message = document.querySelector(".search-error-message");
+                if (!message) {
+                    message = document.createElement("p");
+                    message.className = "search-error-message";
+                    searchForm.insertAdjacentElement("afterend", message);
+                }
+                message.textContent = "Inserisci una domanda prima di cercare.";
+                message.hidden = false;
+                searchInput.focus();
+            }, true);
+        }
 
 
 
@@ -165,11 +125,13 @@
             
             window.autoCompleteSuggestions = suggestions;
 
-            datalist.innerHTML = "";
+            if (!searchDatalist) return;
+
+            searchDatalist.innerHTML = "";
             suggestions.forEach(value => {
                 const option = document.createElement("option");
                 option.value = value;
-                datalist.appendChild(option);
+                searchDatalist.appendChild(option);
             });
 
             } catch (err) {
@@ -197,15 +159,35 @@
         if (finalbtn) {
             finalbtn.addEventListener('click', async (e) => {
                 e.preventDefault();
+                const answerBox = document.getElementById("textarea_feedback");
+                const answerError = document.getElementById("answer-error-message");
+                if (!answerBox || !answerBox.value.trim()) {
+                    e.stopImmediatePropagation();
+                    if (answerError) {
+                        answerError.hidden = false;
+                    }
+                    if (answerBox) {
+                        answerBox.focus();
+                    }
+                    return;
+                }
+                if (answerError) {
+                    answerError.hidden = true;
+                }
                 await new Promise(resolve => setTimeout(resolve, 50));
                 try {
-                    await studyLogger.sendLogs();
+                    if (window.studyLogger) {
+                        await studyLogger.sendLogs();
+                    }
 
-                    const response = await fetch('/end', { method: 'POST' });
+                    const response = await fetch('/end', {
+                        method: 'POST',
+                        redirect: 'manual'
+                    });
 
-                    if (response.redirected) {
+                    if (response.type === 'opaqueredirect' || response.status === 0 || (response.status >= 300 && response.status < 400)) {
                         clearClientData();
-                        window.location.href = response.url;
+                        window.location.href = "{{ url_for('reward') }}";
                     } else {
                         console.error('Unexpected response:', await response.text());
                     }
@@ -219,11 +201,36 @@
     <script>
     function openEndTaskModal() {
         document.getElementById("endTaskModal").style.display = "flex";
+        if (window.studyLogger && !window.clickedEndTaskLogged) {
+            studyLogger.logEvent("ClickedEndTask");
+            window.clickedEndTaskLogged = true;
+        }
         // populateSavedDocuments();
     }
 
     function openFeedbackModal() {
         document.getElementById("feedbackModal").style.display = "flex";
+        const answerError = document.getElementById("answer-error-message");
+        if (answerError) {
+            answerError.hidden = true;
+        }
+        const answerBox = document.getElementById("textarea_feedback");
+        if (answerBox) {
+            setTimeout(() => answerBox.focus(), 0);
+        }
+    }
+
+    function openAnswerModalDirect() {
+        if (window.studyLogger && !window.clickedEndTaskLogged) {
+            studyLogger.logEvent("ClickedEndTask");
+            window.clickedEndTaskLogged = true;
+        }
+        const confirmButton = document.getElementById("yes-end-btn");
+        if (confirmButton) {
+            confirmButton.click();
+        } else {
+            openFeedbackModal();
+        }
     }
 
     function closeEndTaskModal() {

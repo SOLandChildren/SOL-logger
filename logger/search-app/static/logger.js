@@ -381,13 +381,6 @@ if (homeButton) {
 }
 
 
-endtask = document.getElementById("end-task-btn")
-if (endtask) {
-    endtask.addEventListener("click", () => {
-        studyLogger.logEvent("ClickedEndTask");
-    });
-}
-
 endyes = document.getElementById("yes-end-btn")
 if (endyes) {
     endyes.addEventListener("click", () => {
@@ -411,4 +404,3 @@ if (endno) {
         studyLogger.logEvent("TaskContinued");
     });
 }
-

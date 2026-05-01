@@ -1,9 +1,13 @@
 {% extends "layout.html" %}
 {% block title %}Error{% endblock %}
 {% block content %}
-<div class="error-container">
-    <h2>{{ error_title }}</h2>
-    <p>{{ error_message }}</p>
-    <a href="{{ url_for('search_page') }}" class="error-back-btn">Torna alla ricerca</a>
+<div class="app-page">
+  <section class="app-panel error-panel">
+    <div class="error-container">
+      <h2>{{ error_title }}</h2>
+      <p>{{ error_message }}</p>
+      <a href="{{ url_for('search_page') }}" class="app-btn app-btn-primary">Torna alla ricerca</a>
+    </div>
+  </section>
 </div>
 {% endblock %}
