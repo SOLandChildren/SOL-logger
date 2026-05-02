@@ -369,17 +369,12 @@ window.addEventListener("pagehide", (e) => {
 });
 
 const homeButton = document.getElementById("app-home");
-homeButton.addEventListener("click", ()=>{
-    studyLogger.logEvent("wentBackHome");
-});
-
-
-endtask = document.getElementById("end-task-btn")
-if (endtask) {
-    endtask.addEventListener("click", () => {
-        studyLogger.logEvent("ClickedEndTask");
+if (homeButton) {
+    homeButton.addEventListener("click", ()=>{
+        studyLogger.logEvent("wentBackHome");
     });
 }
+
 
 endyes = document.getElementById("yes-end-btn")
 if (endyes) {
@@ -404,4 +399,3 @@ if (endno) {
         studyLogger.logEvent("TaskContinued");
     });
 }
-

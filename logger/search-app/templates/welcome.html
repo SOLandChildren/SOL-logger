@@ -1,11 +1,15 @@
 {% extends "layout.html" %}
 {% block title %}Welcome{% endblock %}
 {% block content %}
-<h2>Benvenuto</h2>
-<p>Benvenuto, e grazie per partecipare al nostro studio!</p>
-<p>Per iniziare, inserisci l’<b>ID utente</b> associato al tuo dispositivo per accedere al motore di ricerca.</p>
-<p></p>
-<form action=”{{ url_for(‘start_page’) }}” method=”get”>
-  <button type=”submit” class=”btn btn-primary”>Continua</button>
-</form>
+
+<div class="welcome-container app-blue-screen">
+    <div class="welcome-logo">
+        <span class="welcome-logo-small">Cerca con</span>
+        <span class="sol-blue">S</span><span class="sol-red">O</span><span class="sol-yellow">L</span>
+    </div>
+    <a href="{{ url_for('start_page') }}" class="app-btn app-btn-warm welcome-start-btn">
+        Inizia
+    </a>
+</div>
+
 {% endblock %}
