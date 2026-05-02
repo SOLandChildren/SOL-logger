@@ -40,6 +40,14 @@
     <div class="no-results-inline" role="status">
       <p>Non ci sono risultati per la vostra ricerca.<br>Provate a fare un'altra domanda!</p>
     </div>
+    <script>
+      if (window.studyLogger) {
+        studyLogger.logEvent("searchNoResults", {
+          query: {{ query|tojson }},
+          page: {{ page|tojson }}
+        });
+      }
+    </script>
     {% else %}
       {% if query == serpapi_query %}
       {% elif page==1 %}

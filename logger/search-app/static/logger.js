@@ -16,12 +16,16 @@
         historyTracker: [],
 
         init() {
-            const uuid = (typeof crypto !== 'undefined' && crypto.randomUUID)
-                ? crypto.randomUUID()
-                : generateUUID();
-
-            this.sessionID = localStorage.getItem('sessionID') || uuid;
-            localStorage.setItem('sessionID', this.sessionID);
+            const serverID = (typeof window !== 'undefined' && window.SESSION_ID) ? window.SESSION_ID : '';
+            if (serverID) {
+                this.sessionID = serverID;
+            } else {
+                const uuid = (typeof crypto !== 'undefined' && crypto.randomUUID)
+                    ? crypto.randomUUID()
+                    : generateUUID();
+                this.sessionID = localStorage.getItem('sessionID') || uuid;
+                localStorage.setItem('sessionID', this.sessionID);
+            }
 
             const storedLogs = localStorage.getItem('sessionLogs');
             const browserHistory = localStorage.getItem('browserHistory');
@@ -49,7 +53,7 @@
         checkHistory(url) {
             if (this.historyTracker.length <= 1) return;
             
-            prevPage = this.historyTracker[this.historyTracker.length - 2];
+            const prevPage = this.historyTracker[this.historyTracker.length - 2];
             if (url==prevPage) return this.historyTracker[this.historyTracker.length - 1];
             else return;
         },
@@ -64,7 +68,7 @@
         },
 
         sendLogs() {
-            if (this.logs.length === 0) return;
+            if (this.logs.length === 0) return Promise.resolve();
 
             return fetch('/log_session', {
                 method: 'POST',
@@ -76,16 +80,15 @@
                     logs: this.logs
                 })
             }).then(response => {
-                if (response.ok) {
-                    console.log('Logs successfully sent to server.');
-                    localStorage.removeItem('sessionLogs');
-                    localStorage.removeItem('sessionID');
-                    localStorage.removeItem('browserHistory');
-                    this.logs = [];
-                    this.historyTracker = [];
-                } else {
-                    console.error('Failed to send logs.');
+                if (!response.ok) {
+                    throw new Error('Failed to send logs.');
                 }
+                console.log('Logs successfully sent to server.');
+                localStorage.removeItem('sessionLogs');
+                localStorage.removeItem('browserHistory');
+                this.logs = [];
+                this.historyTracker = [];
+                return response;
             });
         }
     };
@@ -97,7 +100,7 @@
 const idform = document.getElementById("enter-id-form");
 if (idform) {
   idform.addEventListener("submit", (e) => {
-    const uid = document.getElementById("id-box").value;
+    const uid = document.getElementById("id-box")?.value || "";
     studyLogger.logEvent("idSubmitted", { uid });
   });
 }
@@ -155,12 +158,14 @@ if(querySuggestionsList){
 
 const searchbar = document.getElementById("search-bar")
 if (searchbar) {
+    let _lastQueryLog = { q: null, t: 0 };
     searchbar.addEventListener("submit", (e) => {
-        const query = document.getElementById("search-box").value;
-        studyLogger.logEvent("querySubmitted", { 
-            query: query, 
-        });
-    }); 
+        const query = document.getElementById("search-box")?.value || "";
+        const now = Date.now();
+        if (_lastQueryLog.q === query && now - _lastQueryLog.t < 300) return;
+        _lastQueryLog = { q: query, t: now };
+        studyLogger.logEvent("querySubmitted", { query });
+    });
 }
 
 function getSearchAppLocation(query, page){
@@ -168,6 +173,44 @@ function getSearchAppLocation(query, page){
     search_params.set("query", query);
     search_params.set("page", page);
     return window.location.origin + "/result?" + search_params.toString();
+}
+
+function getResultRank(element) {
+    return element?.getAttribute("result_rank") || element?.id?.split("-").pop();
+}
+
+function getResultElements(rank) {
+    const result = document.getElementById(`result-${rank}`);
+    const link = document.getElementById(`abstract-link-${rank}`);
+    const preview = document.getElementById(`abstract-preview-${rank}`);
+    return { result, link, preview };
+}
+
+function getResultDetails(rank) {
+    const { result, link, preview } = getResultElements(rank);
+
+    if (!result || !link) {
+        console.warn(`Missing required result logging hook for rank ${rank}.`);
+        return null;
+    }
+
+    const query = result.getAttribute("query") || "";
+    const docid = result.getAttribute("base_ir") || "";
+    const page = result.getAttribute("page") || "";
+    const navigationUrl = link.href || link.getAttribute("href") || "";
+    const resultUrl = link.dataset.originalUrl || navigationUrl;
+
+    return {
+        query,
+        docid,
+        rank: String(rank),
+        page,
+        title: link.textContent || "",
+        snippet: preview?.textContent || "",
+        url: resultUrl,
+        navigationUrl,
+        windowLocation: getSearchAppLocation(query, page),
+    };
 }
 
 function logSERP() {
@@ -198,24 +241,19 @@ function logSERP() {
             });
         }
         searchResults.forEach(result => {
-            const query = result.getAttribute("query");
-            const docid = result.getAttribute("base_ir");
             const rank = result.id.split("-")[1];
-            const title = document.getElementById(`abstract-link-${rank}`).textContent;
-            const snippetText = document.getElementById(`abstract-preview-${rank}`).textContent;
-            const page = result.getAttribute("page");
-            const url = document.getElementById(`abstract-link-${rank}`).getAttribute("href");
-            const searchAppLocation = getSearchAppLocation(query, page);
+            const details = getResultDetails(rank);
+            if (!details) return;
             
             studyLogger.logEvent("searchResultGenerated", {
-                    query: query,
-                    docid: docid,
-                    title: title,
-                    snippet: snippetText,
-                    rank: rank,
-                    page: page,
-                    url: url,
-                    windowLocation: searchAppLocation,
+                    query: details.query,
+                    docid: details.docid,
+                    title: details.title,
+                    snippet: details.snippet,
+                    rank: details.rank,
+                    page: details.page,
+                    url: details.url,
+                    windowLocation: details.windowLocation,
                     // history: studyLogger.getHistory(),
                 });
         });
@@ -243,36 +281,35 @@ function logMouseHovers(){
     const searchSnippets = document.querySelectorAll("article.content-section");
     if(searchSnippets){
             searchSnippets.forEach(result => {
-            const query = result.getAttribute("query");
-            const docid = result.getAttribute("base_ir");
             const rank = result.id.split("-")[1];
-            const page = result.getAttribute("page");
-            const url = document.getElementById(`abstract-link-${rank}`).getAttribute("href");
-            const searchAppLocation = getSearchAppLocation(query, page);
 
-            result.addEventListener("mouseenter", ()=>{           
-                studyLogger.logEvent("hoverOverSnippet", {
-                    query: query,
-                    docid: docid,
-                    rank: rank,
-                    page: page,
-                    url: url,
-                    windowLocation: searchAppLocation,
+            result.addEventListener("mouseenter", ()=>{
+                const details = getResultDetails(rank);
+                if (!details) return;
+                studyLogger.logEvent("cursorEnteredSnippet", {
+                    query: details.query,
+                    docid: details.docid,
+                    rank: details.rank,
+                    page: details.page,
+                    url: details.url,
+                    windowLocation: details.windowLocation,
                     // history: studyLogger.getHistory(),
                 });
             });
 
-            // result.addEventListener("mouseleave", ()=>{            
-            //     studyLogger.logEvent("cursorLeftSnippet", {
-            //         query: query,
-            //         docid: docid,
-            //         rank: rank,
-            //         page: page,
-            //         url: url,
-            //         windowLocation: searchAppLocation,
-            //         // history: studyLogger.getHistory(),
-            //     });
-            // });           
+            result.addEventListener("mouseleave", ()=>{
+                const details = getResultDetails(rank);
+                if (!details) return;
+                studyLogger.logEvent("cursorLeftSnippet", {
+                    query: details.query,
+                    docid: details.docid,
+                    rank: details.rank,
+                    page: details.page,
+                    url: details.url,
+                    windowLocation: details.windowLocation,
+                    // history: studyLogger.getHistory(),
+                });
+            });
         });
     }
 }
@@ -284,21 +321,18 @@ function logClicks(){
         // const serpContainer = document.getElementsByClassName("container-info");
         resultLinks.forEach(link => {
             link.addEventListener("click", (e) => {
-                const rank = link.id.split("-")[2];
-                const url = link.getAttribute("href");
-                const snippet = document.getElementById(`result-${rank}`);
-                const query = snippet.getAttribute("query");
-                const page = snippet.getAttribute("page");
-                const docid = document.getElementById(`result-${rank}`).getAttribute("base_ir");
+                const rank = getResultRank(link);
+                const details = getResultDetails(rank);
+                if (!details) return;
                 
-                studyLogger.addHistory(url);
+                studyLogger.addHistory(details.navigationUrl);
                 studyLogger.logEvent("clickedResult", {
-                    query: query,
-                    docid: docid,
-                    rank: rank,
-                    page: page,
-                    url: url,
-                    windowLocation: url,
+                    query: details.query,
+                    docid: details.docid,
+                    rank: details.rank,
+                    page: details.page,
+                    url: details.url,
+                    windowLocation: details.navigationUrl,
                     // history: studyLogger.getHistory(),
                 });
 
@@ -376,24 +410,26 @@ if (homeButton) {
 }
 
 
-endyes = document.getElementById("yes-end-btn")
+const endyes = document.getElementById("yes-end-btn")
 if (endyes) {
     endyes.addEventListener("click", () => {
         studyLogger.logEvent("TaskEndConfirmed");
     });
 }
 
-feedbackbtn = document.getElementById("feedback-btn")
+const feedbackbtn = document.getElementById("feedback-btn")
 if (feedbackbtn) {
     feedbackbtn.addEventListener("click", () => {
-        const fb = document.getElementById("textarea_feedback").value;
+        if (window.taskEndedLogged) return;
+        const fb = document.getElementById("textarea_feedback")?.value || "";
         studyLogger.logEvent("TaskEnded", {
             answer: fb
         });
+        window.taskEndedLogged = true;
     });
 }
 
-endno = document.getElementById("no-end-btn")
+const endno = document.getElementById("no-end-btn")
 if (endno) {
     endno.addEventListener("click", () => {
         studyLogger.logEvent("TaskContinued");

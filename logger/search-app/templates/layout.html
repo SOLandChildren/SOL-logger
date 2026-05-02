@@ -107,32 +107,33 @@
             }, true);
         }
 
-        input.addEventListener("keydown", (e) => {
-            const items = list.querySelectorAll("li");
+        if (searchInput && searchDatalist) {
+        searchInput.addEventListener("keydown", (e) => {
+            const items = Array.from(searchDatalist.querySelectorAll("option"));
             if (!items.length) return;
 
             if (e.key === "ArrowDown") {
                 e.preventDefault();
                 activeIndex = (activeIndex + 1) % items.length;
-                updateActive(items);
+                select(items[activeIndex].value);
             }
 
             if (e.key === "ArrowUp") {
                 e.preventDefault();
                 activeIndex =
                     (activeIndex - 1 + items.length) % items.length;
-                updateActive(items);
+                select(items[activeIndex].value);
             }
 
             if (e.key === "Enter" && activeIndex >= 0) {
-                e.preventDefault(); // don’t submit form yet
-                select(items[activeIndex].textContent);
+                select(items[activeIndex].value);
             }
 
             if (e.key === "Escape") {
                 hideList();
             }
         });
+        }
 
         async function fetchSuggestions(query) {
             try {
@@ -144,8 +145,6 @@
 
                 const suggestions = await response.json();
                 window.autoCompleteSuggestions = suggestions;
-
-                list.innerHTML = "";
 
             if (!searchDatalist) return;
 
@@ -168,23 +167,27 @@
         }
 
         function select(value) {
-            input.value = value;
+            if (!searchInput) return;
+            searchInput.value = value;
             hideList();
         }
 
         function showList() {
-            list.classList.remove("hidden");
-            input.setAttribute("aria-expanded", "true");
+            if (searchInput) {
+                searchInput.setAttribute("aria-expanded", "true");
+            }
         }
 
         function hideList() {
-            list.classList.add("hidden");
-            input.setAttribute("aria-expanded", "false");
+            if (searchInput) {
+                searchInput.setAttribute("aria-expanded", "false");
+            }
         }
 
         document.addEventListener("click", (e) => {
-            if (!e.target.closest("#query-suggestions") &&
-                e.target !== input) {
+            if (searchInput &&
+                !e.target.closest("#query-suggestions") &&
+                e.target !== searchInput) {
                 hideList();
             }
         });
@@ -210,9 +213,14 @@
                 if (answerError) {
                     answerError.hidden = true;
                 }
-                await new Promise(resolve => setTimeout(resolve, 50));
                 try {
                     if (window.studyLogger) {
+                        if (!window.taskEndedLogged) {
+                            studyLogger.logEvent("TaskEnded", {
+                                answer: answerBox.value
+                            });
+                            window.taskEndedLogged = true;
+                        }
                         await studyLogger.sendLogs();
                     }
 
@@ -400,6 +408,7 @@
     }
     </script>
 
-    <script src="../static/logger.js"></script>
+    <script>window.SESSION_ID = {{ session_id|tojson }};</script>
+    <script src="{{ url_for('static', filename='logger.js') }}"></script>
 </body>
 </html>

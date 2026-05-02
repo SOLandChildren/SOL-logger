@@ -13,7 +13,6 @@
       <form method="POST" action="{{ url_for('result') }}" id="search-bar" class="home-search-form">
         {{ form.hidden_tag() }}
         <input
-            list="query-suggestions"
             type="search"
             name="query"
             id="search-box"

@@ -10,4 +10,15 @@
     </div>
   </section>
 </div>
+{% if is_search_engine_error %}
+<script>
+  if (window.studyLogger) {
+    const params = new URLSearchParams(window.location.search);
+    studyLogger.logEvent("searchError", {
+      query: params.get("query") || "",
+      error: {{ (error_title or 'Search error')|tojson }}
+    });
+  }
+</script>
+{% endif %}
 {% endblock %}

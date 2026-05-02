@@ -26,12 +26,15 @@
 </div>
 
 <script>
-if (window.studyLogger) {
-    studyLogger.logEvent("webpageOpened", { url: "{{ url }}" });
+document.addEventListener("DOMContentLoaded", () => {
+    const viewedUrl = {{ url|tojson }};
+    if (!window.studyLogger) return;
 
-    document.getElementById("viewer-back-btn").addEventListener("click", function() {
-        studyLogger.logEvent("webpageClosed", { url: "{{ url }}" });
+    studyLogger.logEvent("webpageOpened", { url: viewedUrl });
+
+    document.getElementById("viewer-back-btn")?.addEventListener("click", function() {
+        studyLogger.logEvent("webpageClosed", { url: viewedUrl });
     });
-}
+});
 </script>
 {% endblock %}

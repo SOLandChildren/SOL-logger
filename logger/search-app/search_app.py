@@ -8,6 +8,7 @@ import collections
 import math
 import os
 import csv
+import uuid
 from datetime import datetime
 import re
 from spellchecker import SpellChecker
@@ -256,7 +257,8 @@ def base():
     form = SearchForm()
     return dict(
         form=form,
-        allow_answer_without_results_for_testing=ALLOW_ANSWER_WITHOUT_RESULTS_FOR_TESTING
+        allow_answer_without_results_for_testing=ALLOW_ANSWER_WITHOUT_RESULTS_FOR_TESTING,
+        session_id=session.get('session_id', '')
     )
 
 @app.route("/")
@@ -307,6 +309,7 @@ def start_page():
     if request.method == 'POST':
         user_id = request.form.get('user_id')
         session['user_id'] = user_id
+        session['session_id'] = str(uuid.uuid4())
         session['task_number'] = '1'
         session['pieces_earned'] = []
         session['tasks_started'] = []
@@ -340,52 +343,26 @@ def result():
     if phase != 'searching':
         return redirect(phase_redirect_url(phase))
 
-    # -----------------------------
-    # POST → run search ONCE
-    # -----------------------------
-    if request.method == "POST":
-        query = request.form.get('query', '')
-        page = 1
-
-        query, serpapi_query = sanitize_query(query)
-
-        url = "/ranking?query="
-        url_affix = "&rpp="
-        maxres = '100' # max 10 pages with max 10 results each
-        query, serpapi_query = sanitize_query(query)
-
-        end_query = db_url + url + query + url_affix + maxres
-
-        try:
-            response = requests.get(end_query)
-            search_results = response.json()["itemlist"]
-        except requests.ConnectionError:
-            return "Connection Error"
-
-        # Store results for pagination
-        # TODO: optimise for CACHE based implementation
-        session["search_results"] = search_results
-        session["query"] = query
-        session["serpapi_query"] = serpapi_query
-
-        # return redirect(url_for("result", page=1))
-
-    # -----------------------------
-    # GET → paginate only
-    # -----------------------------
-    else:
-        query = request.args.get("query", '')
-        page = int(request.args.get("page", 1))
-
-    raw_query = query.strip()
     reminder = USER_TOPICS.get(session.get('user_id'), {}).get(str(session.get('task_number'))+'_full')
+    form = SearchForm()
+    page = 1
+
+    if request.method == "POST":
+        raw_query = request.form.get('query', '').strip()
+    else:
+        raw_query = (request.args.get("query") or session.get("query") or '').strip()
+        try:
+            page = max(1, int(request.args.get("page", 1)))
+        except (TypeError, ValueError):
+            page = 1
+
     if not raw_query:
         return render_template(HOME_URL,
-                               form=SearchForm(),
+                               form=form,
                                show_search=True,
                                reminder=reminder,
                                search_error="Inserisci una domanda prima di cercare.")
-    
+
     url = "/ranking?query="
     url_affix = "&rpp="
     maxres = '100' # max 10 pages with max 10 results each
@@ -394,58 +371,88 @@ def result():
 
     if not query.strip():
         return render_template(HOME_URL,
-                               form=SearchForm(),
+                               form=form,
                                show_search=True,
                                reminder=reminder,
                                search_error="Inserisci una domanda prima di cercare.")
 
-#     end_query = db_url + url + query + url_affix + maxres
-    
-    try:
-        response = requests.get(end_query)
-    except requests.ConnectionError:
-        if ALLOW_ANSWER_WITHOUT_RESULTS_FOR_TESTING:
-            return render_template(SEARCH_URL, title="Search Results",
-                                search_results=[], query=query,
-                                serpapi_query=serpapi_query, page=page,
-                                total_pages=0, show_search=True,
-                                reminder=reminder,
-                                no_results_message="Modalità test: nessun risultato disponibile, ma puoi comunque scrivere una risposta.")
-        return render_template(ERROR_URL, show_search=False,
-                            error_title="Connection Error",
-                            error_message="Could not connect to the search engine. Please try again later."), 503
-
-    if response.status_code != 200:
+    def render_no_results(message):
+        session["search_results"] = []
+        session["query"] = query
+        session["serpapi_query"] = serpapi_query
         return render_template(SEARCH_URL, title="Search Results",
                                search_results=[], query=query,
                                serpapi_query=serpapi_query, page=page,
                                total_pages=0, show_search=True,
                                reminder=reminder,
-                               no_results_message="Non ci sono risultati per la vostra domanda. Provate a fare un'altra domanda!")
+                               no_results_message=message)
 
-    try:
-        search_results = response.json()
-    except (ValueError, KeyError):
-        return render_template(SEARCH_URL, title="Search Results",
-                               search_results=[], query=query,
-                               serpapi_query=serpapi_query, page=page,
-                               total_pages=0, show_search=True,
-                               reminder=reminder,
-                               no_results_message="Non ci sono risultati per la vostra domanda. Provate a fare un'altra domanda!")
+    def normalize_result(result):
+        if not isinstance(result, dict):
+            return {}
+        result.setdefault("displayed_link", result.get("source_title") or result.get("link", ""))
+        result.setdefault("title", "")
+        result.setdefault("snippet", "")
+        result.setdefault("docid", "")
+        result.setdefault("link", "")
+        return result
 
-    if len(search_results.get("itemlist", [])) == 0:
-            return render_template(SEARCH_URL, title="Search Results",
-                                   search_results=[], query=query,
-                                   serpapi_query=serpapi_query, page=page,
-                                   total_pages=0, show_search=True,
-                                   reminder=reminder,
-                                   no_results_message="Non ci sono risultati per la vostra domanda. Provate a fare un'altra domanda!")
+    cached_results = session.get("search_results")
+    use_cached_results = (
+        request.method == "GET"
+        and session.get("query") == query
+        and isinstance(cached_results, list)
+    )
+
+    if use_cached_results:
+        all_results = [normalize_result(result) for result in cached_results]
+        serpapi_query = session.get("serpapi_query", serpapi_query)
     else:
-        total_results = len(search_results["itemlist"])
-        total_pages = min(10, math.ceil(total_results / rpp))
-        start = (page - 1) * rpp
-        end = start + rpp
-        return render_template(SEARCH_URL, title="Search Results", search_results = search_results['itemlist'][start:end], query=query, serpapi_query = serpapi_query, page=page, total_pages = total_pages, show_search=True, reminder=reminder)
+        end_query = db_url + url + query + url_affix + maxres
+
+        try:
+            response = requests.get(end_query)
+        except requests.ConnectionError:
+            if ALLOW_ANSWER_WITHOUT_RESULTS_FOR_TESTING:
+                return render_no_results("Modalità test: nessun risultato disponibile, ma puoi comunque scrivere una risposta.")
+            return render_template(ERROR_URL, show_search=False,
+                                error_title="Connection Error",
+                                error_message="Could not connect to the search engine. Please try again later.",
+                                is_search_engine_error=True), 503
+
+        if response.status_code != 200:
+            return render_no_results("Non ci sono risultati per la vostra domanda. Provate a fare un'altra domanda!")
+
+        try:
+            search_results = response.json()
+        except ValueError:
+            return render_no_results("Non ci sono risultati per la vostra domanda. Provate a fare un'altra domanda!")
+
+        if isinstance(search_results, dict):
+            all_results = search_results.get("itemlist", [])
+        elif isinstance(search_results, list):
+            all_results = search_results
+        else:
+            all_results = []
+
+        all_results = [normalize_result(result) for result in all_results]
+        session["search_results"] = all_results
+        session["query"] = query
+        session["serpapi_query"] = serpapi_query
+
+    if len(all_results) == 0:
+        return render_no_results("Non ci sono risultati per la vostra domanda. Provate a fare un'altra domanda!")
+
+    total_results = len(all_results)
+    total_pages = min(10, math.ceil(total_results / rpp))
+    page = min(page, total_pages)
+    start = (page - 1) * rpp
+    end = start + rpp
+    return render_template(SEARCH_URL, title="Search Results",
+                           search_results=all_results[start:end],
+                           query=query, serpapi_query=serpapi_query,
+                           page=page, total_pages=total_pages,
+                           show_search=True, reminder=reminder)
 
     # f = open("API_keys.json")
     # data = json.load(f)
@@ -540,7 +547,7 @@ def autocomplete():
 @app.route('/log_session', methods=['POST'])
 def log_session():
     print("Received /log_session request")
-    data = request.get_json(force=False, silent=False)
+    data = request.get_json(force=False, silent=True) or {}
     print(f"Request JSON data: {data}")
 
     session_id = data.get('session_id')
@@ -549,15 +556,24 @@ def log_session():
     user_id = session.get('user_id')
     task_number = session.get('task_number')
     print(f"user_id: {user_id}, task_number: {task_number}, session_id: {session_id}")
-    if not (user_id and task_number and logs):
-        print("Missing required data: user_id, task_number or logs")
-        return jsonify({"error": "Missing session_id or logs"}), 400
+    if not (user_id and task_number and session_id and isinstance(logs, list) and logs):
+        print("Missing required data: user_id, task_number, session_id or logs")
+        return jsonify({"error": "Missing user_id, task_number, session_id or logs"}), 400
 
-    filename = f"{user_id}_task{task_number}_{datetime.now():%Y-%m-%d_%H-%M-%S.%f}.log"
+    log_id = session.get('log_id')
+    if not log_id:
+        log_id = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        session['log_id'] = log_id
+
+    filename = f"{user_id}_{log_id}.log"
     filepath = os.path.join(LOG_DIR, filename)
 
-    with open(filepath, 'w', encoding='utf-8') as f:
+    server_session_id = session.get('session_id')
+    with open(filepath, 'a', encoding='utf-8') as f:
         for entry in logs:
+            entry['task_number'] = task_number
+            if server_session_id:
+                entry['sessionID'] = server_session_id
             f.write(json.dumps(entry) + '\n')
 
     return jsonify({"status": "logged", "file": filename}), 200

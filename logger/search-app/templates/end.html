@@ -24,11 +24,13 @@
 </div>
 
 <script>
-if (window.studyLogger) {
-    studyLogger.logEvent("sessionCompleted", {
-        totalTasks: {{ total_tasks }}
-    });
-}
+document.addEventListener("DOMContentLoaded", () => {
+    if (window.studyLogger) {
+        studyLogger.logEvent("sessionCompleted", {
+            totalTasks: {{ total_tasks }}
+        });
+    }
+});
 
 document.getElementById("finish-experiment-btn").addEventListener("click", async function() {
     const btn = this;
