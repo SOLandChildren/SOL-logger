@@ -13,9 +13,9 @@ from spellchecker import SpellChecker
 from time import time
 
 
-app = Flask(__name__)
+app = Flask(__name__)  # Initialize the Flask application instance
 
-CORS(app)
+CORS(app)  # Enables Cross-Origin Resource Sharing for the Flask app
 
 app.config['SECRET_KEY'] = 'OtulwLo7gQ'       # Please set a secret key
 app.config.update(
@@ -24,14 +24,12 @@ app.config.update(
 )
 
 db_url = "http://search_engine:7002"
-# rpp = 20  # Results per Page (Default: 20) 
-rpp = 10  # Results per Page (Default: 20) 
+rpp = 10  # results per page for pagination; may be changed later
 
 LOG_DIR = 'logs'
 os.makedirs(LOG_DIR, exist_ok=True)
-spell = SpellChecker(language='en')
-# spell = SpellChecker(language='it') # uncomment this when switching to Italian
 
+spell = SpellChecker(language='it') 
 
 with open("API_keys.json") as f:
     API_KEY = json.load(f)["serp_api"]["api_key"]
@@ -39,8 +37,6 @@ with open("API_keys.json") as f:
 AUTOCOMPLETE_CACHE = {}
 CACHE_TTL = 600  # 10 minutes
 MAX_SUGGESTIONS = 5
-
-
 
 def sanitize_query(query):
     # Removes all characters except letters, numbers, and spaces
@@ -84,7 +80,6 @@ def sanitize_query(query):
 
     return cleaned_query, corrected_query.strip()
 
-
 def load_user_topics(filepath='data/user_topics.csv'):
     topics = {}
     with open(filepath, newline='', encoding='utf-8') as csvfile:
@@ -108,12 +103,13 @@ def load_user_topics(filepath='data/user_topics.csv'):
 USER_TOPICS = load_user_topics()
 PUZZLE_ASSET_DIR = 'puzzle_pieces'
 
-# ---------------------------------------------------------------------
-# TEMPORARY TESTING FLAG
-# ---------------------------------------------------------------------
+# ------------------------------------------------------------------------------------------------------------------------------------------
+# TEMPORARY TESTING FLAG - If API GOOGLE IS NOT AVAILABLE, SET TO TRUE TO ALLOW ANSWER SUBMISSION WITHOUT SEARCH RESULTS.
+# ------------------------------------------------------------------------------------------------------------------------------------------
 # True  = allow answer submission even when there are no search results.
 # False = production behavior: answer button only appears after valid results.
 ALLOW_ANSWER_WITHOUT_RESULTS_FOR_TESTING = True
+#-------------------------------------------------------------------------------------------------------------------------------------------
 
 def get_total_tasks(user_id):
     """Return how many tasks this user has (count non-empty topic entries)."""
@@ -125,7 +121,6 @@ def get_total_tasks(user_id):
         else:
             break
     return count
-
 
 def current_phase():
     user_id = session.get('user_id')
@@ -145,7 +140,6 @@ def current_phase():
         return 'searching'
     return 'task_intro'
 
-
 def phase_redirect_url(phase=None):
     if phase is None:
         phase = current_phase()
@@ -161,7 +155,6 @@ def phase_redirect_url(phase=None):
         return url_for('thank_you')
     return url_for('welcome')
 
-
 @app.after_request
 def add_no_store_headers(response):
     content_type = response.headers.get('Content-Type', '')
@@ -171,16 +164,18 @@ def add_no_store_headers(response):
         response.headers['Expires'] = '0'
     return response
 
-
 class PuzzleConfigError(Exception):
     pass
 
+#Global constants for template rendering
+ERROR_URL = "error.html"
+SEARCH_URL = "search.html"
+HOME_URL = "home.html"
 
 def render_puzzle_config_error(message):
-    return render_template('error.html', show_search=False,
+    return render_template(ERROR_URL, show_search=False,
                            error_title="Puzzle Configuration Error",
                            error_message=message), 500
-
 
 def get_user_config(user_id):
     user = USER_TOPICS.get(user_id)
@@ -189,7 +184,6 @@ def get_user_config(user_id):
             f"No topic configuration found in data/user_topics.csv for user '{user_id}'."
         )
     return user
-
 
 def validate_puzzle_gif(user_id, csv_field):
     user = get_user_config(user_id)
@@ -210,7 +204,6 @@ def validate_puzzle_gif(user_id, csv_field):
             f"Missing GIF file for user '{user_id}': static/{PUZZLE_ASSET_DIR}/{filename}."
         )
     return f"{PUZZLE_ASSET_DIR}/{filename}"
-
 
 def get_unlocked_piece(user_id, task_number):
     try:
@@ -241,7 +234,6 @@ def base():
 def index():
     return redirect(url_for('welcome'))
 
-
 @app.route("/welcome")
 def welcome():
     """Splash page — SOL Search logo + Start button."""
@@ -251,7 +243,6 @@ def welcome():
     if current_phase() != 'pre_id':
         return redirect(phase_redirect_url())
     return render_template("welcome.html", show_search=False)
-
 
 @app.route("/search")
 def search_page():
@@ -278,7 +269,7 @@ def search_page():
 
     form = SearchForm()
     reminder = USER_TOPICS.get(session.get('user_id'), {}).get(str(session.get('task_number'))+'_full')
-    return render_template("home.html", form=form, show_search=True, reminder=reminder)
+    return render_template(HOME_URL, form=form, show_search=True, reminder=reminder)
 
 @app.route('/start', methods=['GET', 'POST'])
 def start_page():
@@ -314,7 +305,6 @@ def task():
 
     return render_template("task.html", show_search=False, task_number=task_number, topic=topic, topic_title=topic_title, user_id=user_id)
 
-
 @app.route("/result", methods=['GET', 'POST'])
 def result():
     phase = current_phase()
@@ -331,7 +321,7 @@ def result():
     raw_query = query.strip()
     reminder = USER_TOPICS.get(session.get('user_id'), {}).get(str(session.get('task_number'))+'_full')
     if not raw_query:
-        return render_template("home.html",
+        return render_template(HOME_URL,
                                form=SearchForm(),
                                show_search=True,
                                reminder=reminder,
@@ -344,7 +334,7 @@ def result():
     query, serpapi_query = sanitize_query(raw_query)
 
     if not query.strip():
-        return render_template("home.html",
+        return render_template(HOME_URL,
                                form=SearchForm(),
                                show_search=True,
                                reminder=reminder,
@@ -356,18 +346,18 @@ def result():
         response = requests.get(end_query)
     except requests.ConnectionError:
         if ALLOW_ANSWER_WITHOUT_RESULTS_FOR_TESTING:
-            return render_template("search.html", title="Search Results",
+            return render_template(SEARCH_URL, title="Search Results",
                                 search_results=[], query=query,
                                 serpapi_query=serpapi_query, page=page,
                                 total_pages=0, show_search=True,
                                 reminder=reminder,
                                 no_results_message="Modalità test: nessun risultato disponibile, ma puoi comunque scrivere una risposta.")
-        return render_template('error.html', show_search=False,
+        return render_template(ERROR_URL, show_search=False,
                             error_title="Connection Error",
                             error_message="Could not connect to the search engine. Please try again later."), 503
 
     if response.status_code != 200:
-        return render_template("search.html", title="Search Results",
+        return render_template(SEARCH_URL, title="Search Results",
                                search_results=[], query=query,
                                serpapi_query=serpapi_query, page=page,
                                total_pages=0, show_search=True,
@@ -377,7 +367,7 @@ def result():
     try:
         search_results = response.json()
     except (ValueError, KeyError):
-        return render_template("search.html", title="Search Results",
+        return render_template(SEARCH_URL, title="Search Results",
                                search_results=[], query=query,
                                serpapi_query=serpapi_query, page=page,
                                total_pages=0, show_search=True,
@@ -385,7 +375,7 @@ def result():
                                no_results_message="Non ci sono risultati per la vostra domanda. Provate a fare un'altra domanda!")
 
     if len(search_results.get("itemlist", [])) == 0:
-            return render_template("search.html", title="Search Results",
+            return render_template(SEARCH_URL, title="Search Results",
                                    search_results=[], query=query,
                                    serpapi_query=serpapi_query, page=page,
                                    total_pages=0, show_search=True,
@@ -396,7 +386,7 @@ def result():
         total_pages = min(10, math.ceil(total_results / rpp))
         start = (page - 1) * rpp
         end = start + rpp
-        return render_template("search.html", title="Search Results", search_results = search_results['itemlist'][start:end], query=query, serpapi_query = serpapi_query, page=page, total_pages = total_pages, show_search=True, reminder=reminder)
+        return render_template(SEARCH_URL, title="Search Results", search_results = search_results['itemlist'][start:end], query=query, serpapi_query = serpapi_query, page=page, total_pages = total_pages, show_search=True, reminder=reminder)
 
     # f = open("API_keys.json")
     # data = json.load(f)
@@ -429,7 +419,7 @@ def result():
     #     total_pages = min(10, math.ceil(total_results / rpp))
     #     start = (page - 1) * rpp
     #     end = start + rpp
-    #     return render_template("search.html", title="Search Results", search_results = search_results['itemlist'][start:end], query=query, page=page, total_pages = total_pages, show_search=True, reminder=reminder)
+    #     return render_template(SEARCH_URL, title="Search Results", search_results = search_results['itemlist'][start:end], query=query, page=page, total_pages = total_pages, show_search=True, reminder=reminder)
 
 @app.route("/webpage")
 def webpage():
@@ -445,7 +435,6 @@ def webpage():
     return render_template("webpage.html", url=url, query=query, page=page, show_search=False)
 
 @app.route("/autocomplete")
-
 def autocomplete():
     query = request.args.get("query")
 
@@ -489,8 +478,6 @@ def autocomplete():
         # graceful fallback (no retries)
         return jsonify([]), 200
 
-
-
 @app.route('/log_session', methods=['POST'])
 def log_session():
     print("Received /log_session request")
@@ -531,7 +518,6 @@ def end_task():
 
     return redirect(url_for('reward'))
 
-
 @app.route('/next_task')
 def next_task():
     """Advance to the next task number and redirect to the Scenario Page."""
@@ -542,7 +528,6 @@ def next_task():
     next_num = str(int(task_number) + 1)
     session['task_number'] = next_num
     return redirect(url_for('task'))
-
 
 @app.route('/reward')
 def reward():
@@ -567,7 +552,6 @@ def reward():
                            total_tasks=total_tasks,
                            is_last=is_last)
 
-
 @app.route('/thank_you')
 def thank_you():
     phase = current_phase()
@@ -590,13 +574,13 @@ def thank_you():
 
 @app.errorhandler(404)
 def page_not_found(e):
-    return render_template('error.html', show_search=False,
+    return render_template(ERROR_URL, show_search=False,
                            error_title="Page Not Found",
                            error_message="The page you are looking for does not exist."), 404
 
 @app.errorhandler(500)
 def internal_error(e):
-    return render_template('error.html', show_search=False,
+    return render_template(ERROR_URL, show_search=False,
                            error_title="Server Error",
                            error_message="Something went wrong on our end. Please try again."), 500
 
