@@ -214,67 +214,103 @@ function getResultDetails(rank) {
 }
 
 function logSERP() {
-    const searchResults = document.querySelectorAll("article.content-section");
-    if (!searchResults || searchResults.length === 0) return; // DOM not ready
-
-    const firstResult = document.querySelector("article.content-section");
-    const query = firstResult.getAttribute("query");
-    const page = firstResult.getAttribute("page");
-    const searchAppLocation = getSearchAppLocation(query, page);
-
-    if(studyLogger.checkHistory(searchAppLocation)){
-        studyLogger.logEvent("wentBack", {
-            "query": query,
-            "fromURL": studyLogger.checkHistory(searchAppLocation),
-            "toURL": searchAppLocation,
-        });
-        studyLogger.removeHistory();
-        studyLogger.addHistory(searchAppLocation);
-    }
-    else{
-        studyLogger.addHistory(searchAppLocation);
-        const didYouMean = document.getElementById("did-you-mean");
-        if(didYouMean){
-            studyLogger.logEvent("generatedDidYouMean", {
-                "user query": query,
-                "suggested query": didYouMean.textContent
+    // when query returns no results
+    const no_results = document.getElementById("no-results");
+    if(no_results){
+        const query = no_results.getAttribute("query");
+        const page = "0";
+        const searchAppLocation = getSearchAppLocation(query, page);
+        if(studyLogger.checkHistory(searchAppLocation)){
+            studyLogger.logEvent("wentBack", {
+                "query": query,
+                "fromURL": studyLogger.checkHistory(searchAppLocation),
+                "toURL": searchAppLocation,
+            });
+            studyLogger.removeHistory();
+            studyLogger.addHistory(searchAppLocation);
+        }
+        else{
+            studyLogger.addHistory(searchAppLocation);
+            const didYouMean = document.getElementById("did-you-mean");
+            if(didYouMean){
+                studyLogger.logEvent("generatedDidYouMean", {
+                    "user query": query,
+                    "suggested query": didYouMean.textContent
+                });
+            }
+            studyLogger.logEvent("noResultsGenerated", {
+                query: query,
+                windowLocation: searchAppLocation,
             });
         }
-        searchResults.forEach(result => {
-            const rank = result.id.split("-")[1];
-            const details = getResultDetails(rank);
-            if (!details) return;
-            
-            studyLogger.logEvent("searchResultGenerated", {
-                    query: details.query,
-                    docid: details.docid,
-                    title: details.title,
-                    snippet: details.snippet,
-                    rank: details.rank,
-                    page: details.page,
-                    url: details.url,
-                    windowLocation: details.windowLocation,
-                    // history: studyLogger.getHistory(),
+    }
+    // when query returns results
+    else{
+        const searchResults = document.querySelectorAll("article.content-section");
+        if (!searchResults || searchResults.length === 0) return; // DOM not ready
+
+        const firstResult = document.querySelector("article.content-section");
+        const query = firstResult.getAttribute("query");
+        const page = firstResult.getAttribute("page");
+        const searchAppLocation = getSearchAppLocation(query, page);
+
+        if(studyLogger.checkHistory(searchAppLocation)){
+            studyLogger.logEvent("wentBack", {
+                "query": query,
+                "fromURL": studyLogger.checkHistory(searchAppLocation),
+                "toURL": searchAppLocation,
+            });
+            studyLogger.removeHistory();
+            studyLogger.addHistory(searchAppLocation);
+        }
+        else{
+            studyLogger.addHistory(searchAppLocation);
+            const didYouMean = document.getElementById("did-you-mean");
+            if(didYouMean){
+                studyLogger.logEvent("generatedDidYouMean", {
+                    "user query": query,
+                    "suggested query": didYouMean.textContent
                 });
-        });
+            }
+            searchResults.forEach(result => {
+                const rank = result.id.split("-")[1];
+                const details = getResultDetails(rank);
+                if (!details) return;
+                
+                studyLogger.logEvent("searchResultGenerated", {
+                        query: details.query,
+                        docid: details.docid,
+                        title: details.title,
+                        snippet: details.snippet,
+                        rank: details.rank,
+                        page: details.page,
+                        url: details.url,
+                        windowLocation: details.windowLocation,
+                        // history: studyLogger.getHistory(),
+                    });
+            });
+        }
+
+        // log interactions with Did you mean suggestions
+        const didYouMean = document.getElementById("did-you-mean");
+        if(didYouMean){
+            didYouMean.addEventListener("mouseenter", (e) => {
+                studyLogger.logEvent("hoverOverDidYouMean", {
+                    "user query": query,
+                    "suggested query": didYouMean.textContent
+                });
+            });
+
+            didYouMean.addEventListener("click", (e) => {
+                studyLogger.logEvent("clickedDidYouMeanSuggestion", {
+                    "user query": query,
+                    "suggested query": didYouMean.textContent
+                });
+            });
+        }
     }
 
-    const didYouMean = document.getElementById("did-you-mean");
-    if(didYouMean){
-        didYouMean.addEventListener("mouseenter", (e) => {
-            studyLogger.logEvent("hoverOverDidYouMean", {
-                "user query": query,
-                "suggested query": didYouMean.textContent
-            });
-        });
-
-        didYouMean.addEventListener("click", (e) => {
-            studyLogger.logEvent("clickedDidYouMeanSuggestion", {
-                "user query": query,
-                "suggested query": didYouMean.textContent
-            });
-        });
-    }
+    
 }
 
 function logMouseHovers(){

@@ -64,7 +64,8 @@ rpp = 10  # results per page for pagination; may be changed later
 LOG_DIR = 'logs'
 os.makedirs(LOG_DIR, exist_ok=True)
 
-spell = SpellChecker(language='it') 
+# spell = SpellChecker(language='en') 
+spell = SpellChecker(language='it') # uncomment for final implementation
 
 with open("API_keys.json") as f:
     API_KEY = json.load(f)["serp_api"]["api_key"]

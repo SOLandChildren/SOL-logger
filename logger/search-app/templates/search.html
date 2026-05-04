@@ -38,7 +38,7 @@
 
     {% if no_results_message %}
     <div class="no-results-inline" role="status">
-      <p>Non ci sono risultati per la vostra ricerca.<br>Provate a fare un'altra domanda!</p>
+      <p  id="no-results" query="{{ query|safe }}">Non ci sono risultati per la vostra ricerca.<br>Provate a fare un'altra domanda!</p>
     </div>
     <script>
       if (window.studyLogger) {
