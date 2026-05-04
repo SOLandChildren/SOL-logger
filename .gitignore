@@ -1,6 +1,6 @@
 logger/search-app/API_keys.json
 logger/search-engine/API_keys.json
-logger/search-engine/datasets/
+# logger/search-engine/datasets/
 logger/old_logs/
 experiments/data/corpus
 
@@ -11,6 +11,11 @@ experiments/testfile.ipynb
 logger/search-engine/test.ipynb
 # Local generated logs
 logger/logs/*
+
+# unsused document collections
+logger/search-engine/datasets/kid-friend-en/
+logger/search-engine/datasets/argsme.zip
+logger/search-engine/datasets/CLEAR Corpus 6.01.xlsx
 
 # Local secrets
 logger/search-app/service_account.json
