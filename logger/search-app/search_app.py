@@ -188,73 +188,73 @@ def task():
 
     return render_template("task.html", show_search=False, task_number = task_number, topic = topic, topic_title = topic_title, user_id = user_id)
 
-@app.route("/result", methods=['GET', 'POST'])
-def result():
+# @app.route("/result", methods=['GET', 'POST'])
+# def result():
 
-    # -----------------------------
-    # POST → run search ONCE
-    # -----------------------------
-    if request.method == "POST":
-        query = request.form["query"]
-        page = 1
+    # # -----------------------------
+    # # POST → run search ONCE
+    # # -----------------------------
+    # if request.method == "POST":
+    #     query = request.form["query"]
+    #     page = 1
 
-        query, serpapi_query = sanitize_query(query)
+    #     query, serpapi_query = sanitize_query(query)
 
-        url = "/ranking?query="
-        url_affix = "&rpp="
-        maxres = '100' # max 10 pages with max 10 results each
-        query, serpapi_query = sanitize_query(query)
+    #     url = "/ranking?query="
+    #     url_affix = "&rpp="
+    #     maxres = '100' # max 10 pages with max 10 results each
+    #     query, serpapi_query = sanitize_query(query)
 
-        end_query = db_url + url + query + url_affix + maxres
+    #     end_query = db_url + url + query + url_affix + maxres
 
-        try:
-            response = requests.get(end_query)
-            search_results = response.json()["itemlist"]
-        except requests.ConnectionError:
-            return "Connection Error"
+    #     try:
+    #         response = requests.get(end_query)
+    #         search_results = response.json()["itemlist"]
+    #     except requests.ConnectionError:
+    #         return "Connection Error"
 
-        # Store results for pagination
-        # TODO: optimise for CACHE based implementation
-        session["search_results"] = search_results
-        session["query"] = query
-        session["serpapi_query"] = serpapi_query
+    #     # Store results for pagination
+    #     # TODO: optimise for CACHE based implementation
+    #     session["search_results"] = search_results
+    #     session["query"] = query
+    #     session["serpapi_query"] = serpapi_query
 
-        # return redirect(url_for("result", page=1))
+    #     # return redirect(url_for("result", page=1))
 
-    # -----------------------------
-    # GET → paginate only
-    # -----------------------------
-    else:
-        page = int(request.args.get("page", 1))
-        search_results = session.get("search_results", [])
-        query = session.get("query")
-        serpapi_query = session.get("serpapi_query")
+    # # -----------------------------
+    # # GET → paginate only
+    # # -----------------------------
+    # else:
+    #     page = int(request.args.get("page", 1))
+    #     search_results = session.get("search_results", [])
+    #     query = session.get("query")
+    #     serpapi_query = session.get("serpapi_query")
 
-    if not search_results:
-        return render_template(
-            "no_result.html",
-            title="No results found",
-            query=query,
-            serpapi_query=serpapi_query,
-            show_search=True
-        )
+    # if not search_results:
+    #     return render_template(
+    #         "no_result.html",
+    #         title="No results found",
+    #         query=query,
+    #         serpapi_query=serpapi_query,
+    #         show_search=True
+    #     )
 
-    total_results = len(search_results)
-    total_pages = min(10, math.ceil(total_results / rpp))
+    # total_results = len(search_results)
+    # total_pages = min(10, math.ceil(total_results / rpp))
 
-    start = (page - 1) * rpp
-    end = start + rpp
+    # start = (page - 1) * rpp
+    # end = start + rpp
 
-    return render_template(
-        "search.html",
-        title="Search Results",
-        search_results=search_results[start:end],
-        query=query,
-        serpapi_query=serpapi_query,
-        page=page,
-        total_pages=total_pages,
-        show_search=True
-    )
+    # return render_template(
+    #     "search.html",
+    #     title="Search Results",
+    #     search_results=search_results[start:end],
+    #     query=query,
+    #     serpapi_query=serpapi_query,
+    #     page=page,
+    #     total_pages=total_pages,
+    #     show_search=True
+    # )
 
 #     ## when using external API for ranking - edit to suit the API used
 #           TODO: optimise to make API call only for POST method, and store results (max 100 per query) in session (ideally through a CACHE-based implementation)
@@ -285,41 +285,41 @@ def result():
 #     #     return render_template("search.html", title="Search Results", search_results = search_results['itemlist'][start:end], query=query, page=page, total_pages = total_pages, show_search=True, reminder=reminder)
 
 ## old ranking route implementation, kept it here to revert back in case new implementation breaks
-# @app.route("/result", methods=['GET', 'POST'])
-# def result():
+@app.route("/result", methods=['GET', 'POST'])
+def result():
 
-#     if request.method == "POST":
-#         query = request.form['query']
-#         page = 1
-#     else:
-#         query = request.args.get("query")
-#         page = int(request.args.get("page", 1))
+    if request.method == "POST":
+        query = request.form['query']
+        page = 1
+    else:
+        query = request.args.get("query")
+        page = int(request.args.get("page", 1))
     
-#     url = "/ranking?query="
-#     url_affix = "&rpp="
-#     maxres = '100' # max 10 pages with max 10 results each
-#     rpp = 10 # results per page; may be changed later
-#     query, serpapi_query = sanitize_query(query)
+    url = "/ranking?query="
+    url_affix = "&rpp="
+    maxres = '100' # max 10 pages with max 10 results each
+    rpp = 10 # results per page; may be changed later
+    query, serpapi_query = sanitize_query(query)
 
-#     end_query = db_url + url + query + url_affix + maxres
+    end_query = db_url + url + query + url_affix + maxres
     
-#     try:
-#         response = requests.get(end_query)
-#     except requests.ConnectionError:
-#         return "Connection Error" 
+    try:
+        response = requests.get(end_query)
+    except requests.ConnectionError:
+        return "Connection Error" 
 
-#     search_results = response.json()
+    search_results = response.json()
 
-#     reminder = USER_TOPICS.get(session.get('user_id'), {}).get(str(session.get('task_number'))+'_full')
+    reminder = USER_TOPICS.get(session.get('user_id'), {}).get(str(session.get('task_number'))+'_full')
     
-#     if len(search_results["itemlist"]) == 0:
-#             return render_template("no_result.html", title="No results found", query= query, serpapi_query=serpapi_query, show_search=True, reminder=reminder)
-#     else:
-#         total_results = len(search_results["itemlist"])
-#         total_pages = min(10, math.ceil(total_results / rpp))
-#         start = (page - 1) * rpp
-#         end = start + rpp
-#         return render_template("search.html", title="Search Results", search_results = search_results['itemlist'][start:end], query=query, serpapi_query = serpapi_query, page=page, total_pages = total_pages, show_search=True, reminder=reminder)
+    if len(search_results["itemlist"]) == 0:
+            return render_template("no_result.html", title="No results found", query= query, serpapi_query=serpapi_query, show_search=True, reminder=reminder)
+    else:
+        total_results = len(search_results["itemlist"])
+        total_pages = min(10, math.ceil(total_results / rpp))
+        start = (page - 1) * rpp
+        end = start + rpp
+        return render_template("search.html", title="Search Results", search_results = search_results['itemlist'][start:end], query=query, serpapi_query = serpapi_query, page=page, total_pages = total_pages, show_search=True, reminder=reminder)
 
 @app.route("/autocomplete")
 def autocomplete():
