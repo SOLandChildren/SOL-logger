@@ -1,0 +1,24 @@
+{% extends "layout.html" %}
+{% block title %}Error{% endblock %}
+{% block content %}
+<div class="app-page">
+  <section class="app-panel error-panel">
+    <div class="error-container">
+      <h2>{{ error_title }}</h2>
+      <p>{{ error_message }}</p>
+      <a href="{{ url_for('search_page') }}" class="app-btn app-btn-primary">Torna alla ricerca</a>
+    </div>
+  </section>
+</div>
+{% if is_search_engine_error %}
+<script>
+  if (window.studyLogger) {
+    const params = new URLSearchParams(window.location.search);
+    studyLogger.logEvent("searchError", {
+      query: params.get("query") || "",
+      error: {{ (error_title or 'Search error')|tojson }}
+    });
+  }
+</script>
+{% endif %}
+{% endblock %}

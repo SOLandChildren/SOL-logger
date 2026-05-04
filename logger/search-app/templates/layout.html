@@ -14,68 +14,11 @@
     {% endif %}
 </head>
 <body>
-    {% if show_search and query is defined %}
-    <header class="site-header">
-        <nav class="navbar navbar-expand-md navbar-light bg-steel fixed-top">
-            <div class="container-fluid" style="padding-left: 1.25rem; padding-right: 1.25rem;">
-                <a class="navbar-brand me-2" href="/" id="app-home"><span style="color:#4285F4">S</span><span style="color:#EA4335">O</span><span style="color:#FBBC05">L</span> <span style="color:#4285F4">S</span><span style="color:#EA4335">e</span><span style="color:#FBBC05">a</span><span style="color:#4285F4">r</span><span style="color:#34A853">c</span><span style="color:#EA4335">h</span></a>
-
-                <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarToggle" aria-controls="navbarToggle" aria-expanded="false" aria-label="Toggle navigation">
-                    <span class="navbar-toggler-icon"></span>
-                </button>
-
-                <div class="collapse navbar-collapse" id="navbarToggle">
-                    <div class="navbar-nav mr-auto"></div>
-
-                <!-- Navbar SEARCHBAR-->
-                <div class="nav-searchbar">
-                    <form method="POST" action="{{ url_for('result') }}" class="d-flex" id="search-bar">
-                        {{ form.hidden_tag() }}
-                            <input list="query-suggestions" class="form-control me-4" type="search" placeholder="Cerca...", style="width:500px;margin-right:30px" aria-label="Search", name="query" id="search-box" autocomplete="off">
-                            <!-- <div id="query-suggestions-box"><datalist id="query-suggestions"></datalist></div> -->
-                            <ul id="query-suggestions" class="hidden" role="listbox"></ul>
-                        <button class="btn btn-outline-secondary"
-                                type="submit"
-                                name="submit-box"
-                                id="submit-box">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="#5f6368" style="vertical-align:middle;margin-right:4px"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>Cerca
-                        </button>
-                    </form>
-                </div>
-            </div>
-        </nav>
-    </header>
-    {% endif %}
-
-    <main role="main" class="container {% if query is not defined %}home-main{% endif %}">
-        {% if query is defined %}
-        <div class="results-shell">
-            <aside class="results-sidebar">
-                <h5>Hai finito di cercare?</h5>
-                <p>Premi il pulsante qui sotto quando sei sicuro di aver trovato le risposte che cercavi.</p>
-                <button type="submit"
-                        onclick="openEndTaskModal()"
-                        class="btn btn-danger mt-3"
-                        id="end-task-btn">
-                    Fine compito
-                </button>
-            </aside>
-            <section class="results-main">
-        {% else %}
-            <div class="home-shell">
-        {% endif %}
-
+    <main role="main" class="app-main">
         {% block content %}{% endblock content %}
-
-        {% if query is defined %}
-            </section>
-        </div>
-        {% else %}
-            </div>
-        {% endif %}
     </main>
 
-    <div id="endTaskModal" class="modal" style="display: none;">
+    <div id="endTaskModal" class="modal">
         <div class="modal-content-box">
             <span class="close" onclick="closeEndTaskModal()">&times;</span>
             <h2>Sei sicuro di voler terminare il compito?</h2>
@@ -87,23 +30,26 @@
         </div> -->
 
         <div class="modal-buttons">
-        <button id = "yes-end-btn" class="btn btn-primary" onclick="closeEndTaskModal();openFeedbackModal()">Yes, end task</button>
+        <!-- <button id = "yes-end-btn" class="btn btn-primary" onclick="closeEndTaskModal();openFeedbackModal()">Yes, end task</button> -->
+        <button id = "yes-end-btn" class="app-btn app-btn-primary" onclick="closeEndTaskModal();openFeedbackModal()">Si, termina</button>
 
-        <button id = "no-end-btn" onclick="closeEndTaskModal()" class="btn btn-outline-secondary">No, resume search</button>
+        <button id = "no-end-btn" onclick="closeEndTaskModal()" class="app-btn app-btn-secondary">No, continua a cercare</button>
+        </div>
         </div>
     </div>
 
-    <div id="feedbackModal" class="modal" style="display: none;">
+    <div id="feedbackModal" class="modal">
     <div class="modal-content-box">
         <span class="close" onclick="closeFeedbackModal();openEndTaskModal()">&times;</span>
-        <h2>Enter your answer below:</h2>
+        <h2>Inserisci la tua risposta qui sotto:</h2>
 
             <div id="feedback">
                 <textarea id="textarea_feedback" name="feedbackText" cols="40" rows="5"></textarea>
+                <p id="answer-error-message" class="form-error" hidden>Inserisci una risposta</p>
             </div>
 
             <div class="modal-buttons">
-                <button id="feedback-btn" class="btn btn-primary">Invia e termina</button>
+                <button id="feedback-btn" class="app-btn app-btn-primary">Invia la risposta</button>
             </div>
         </div>
     </div>
@@ -113,22 +59,20 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/js/bootstrap.min.js" integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM" crossorigin="anonymous"></script>
 
     <script>
-        const input = document.getElementById("search-box");
-        const list = document.getElementById("query-suggestions");
+        // const validIDs = {{ ["ducks", "roads", "trees"] | tojson }};
+        const searchInput = document.getElementById("search-box");
+        const searchDatalist = document.getElementById("query-suggestions");
 
         let debounceTimer;
         let activeIndex = -1;
         window.autoCompleteSuggestions = [];
 
-        input.setAttribute("role", "combobox");
-        input.setAttribute("aria-autocomplete", "list");
-        input.setAttribute("aria-expanded", "false");
-        input.setAttribute("aria-controls", list.id);
-
-        input.addEventListener("input", () => {
-            const query = input.value.trim();
-            list.innerHTML = "";
-            activeIndex = -1;
+        if (searchInput) {
+        searchInput.addEventListener("input", () => {
+            const query = searchInput.value.trim();
+            if (searchDatalist) {
+                searchDatalist.innerHTML = "";
+            }
 
             if (query.length < 3) {
                 hideList();
@@ -141,33 +85,55 @@
                 fetchSuggestions(query);
             }, 300);
         });
+        } // end if (input)
 
-        input.addEventListener("keydown", (e) => {
-            const items = list.querySelectorAll("li");
+        const searchForm = document.getElementById("search-bar");
+        if (searchForm && searchInput) {
+            searchForm.addEventListener("submit", (event) => {
+                if (searchInput.value.trim()) return;
+
+                event.preventDefault();
+                event.stopImmediatePropagation();
+
+                let message = document.querySelector(".search-error-message");
+                if (!message) {
+                    message = document.createElement("p");
+                    message.className = "search-error-message";
+                    searchForm.insertAdjacentElement("afterend", message);
+                }
+                message.textContent = "Inserisci una domanda prima di cercare.";
+                message.hidden = false;
+                searchInput.focus();
+            }, true);
+        }
+
+        if (searchInput && searchDatalist) {
+        searchInput.addEventListener("keydown", (e) => {
+            const items = Array.from(searchDatalist.querySelectorAll("option"));
             if (!items.length) return;
 
             if (e.key === "ArrowDown") {
                 e.preventDefault();
                 activeIndex = (activeIndex + 1) % items.length;
-                updateActive(items);
+                select(items[activeIndex].value);
             }
 
             if (e.key === "ArrowUp") {
                 e.preventDefault();
                 activeIndex =
                     (activeIndex - 1 + items.length) % items.length;
-                updateActive(items);
+                select(items[activeIndex].value);
             }
 
             if (e.key === "Enter" && activeIndex >= 0) {
-                e.preventDefault(); // don’t submit form yet
-                select(items[activeIndex].textContent);
+                select(items[activeIndex].value);
             }
 
             if (e.key === "Escape") {
                 hideList();
             }
         });
+        }
 
         async function fetchSuggestions(query) {
             try {
@@ -180,22 +146,14 @@
                 const suggestions = await response.json();
                 window.autoCompleteSuggestions = suggestions;
 
-                list.innerHTML = "";
+            if (!searchDatalist) return;
 
-                suggestions.forEach(value => {
-                    const li = document.createElement("li");
-                    li.textContent = value;
-                    li.role = "option";
-                    li.setAttribute("aria-selected", "false");
-
-                    li.addEventListener("mousedown", () => {
-                        select(value);
-                    });
-
-                    list.appendChild(li);
-                });
-
-                showList();
+            searchDatalist.innerHTML = "";
+            suggestions.forEach(value => {
+                const option = document.createElement("option");
+                option.value = value;
+                searchDatalist.appendChild(option);
+            });
 
             } catch (err) {
                 console.error("Autocomplete error:", err);
@@ -209,23 +167,27 @@
         }
 
         function select(value) {
-            input.value = value;
+            if (!searchInput) return;
+            searchInput.value = value;
             hideList();
         }
 
         function showList() {
-            list.classList.remove("hidden");
-            input.setAttribute("aria-expanded", "true");
+            if (searchInput) {
+                searchInput.setAttribute("aria-expanded", "true");
+            }
         }
 
         function hideList() {
-            list.classList.add("hidden");
-            input.setAttribute("aria-expanded", "false");
+            if (searchInput) {
+                searchInput.setAttribute("aria-expanded", "false");
+            }
         }
 
         document.addEventListener("click", (e) => {
-            if (!e.target.closest("#query-suggestions") &&
-                e.target !== input) {
+            if (searchInput &&
+                !e.target.closest("#query-suggestions") &&
+                e.target !== searchInput) {
                 hideList();
             }
         });
@@ -236,15 +198,40 @@
         if (finalbtn) {
             finalbtn.addEventListener('click', async (e) => {
                 e.preventDefault();
-                await new Promise(resolve => setTimeout(resolve, 50));
+                const answerBox = document.getElementById("textarea_feedback");
+                const answerError = document.getElementById("answer-error-message");
+                if (!answerBox || !answerBox.value.trim()) {
+                    e.stopImmediatePropagation();
+                    if (answerError) {
+                        answerError.hidden = false;
+                    }
+                    if (answerBox) {
+                        answerBox.focus();
+                    }
+                    return;
+                }
+                if (answerError) {
+                    answerError.hidden = true;
+                }
                 try {
-                    await studyLogger.sendLogs();
+                    if (window.studyLogger) {
+                        if (!window.taskEndedLogged) {
+                            studyLogger.logEvent("TaskEnded", {
+                                answer: answerBox.value
+                            });
+                            window.taskEndedLogged = true;
+                        }
+                        await studyLogger.sendLogs();
+                    }
 
-                    const response = await fetch('/end', { method: 'POST' });
+                    const response = await fetch('/end', {
+                        method: 'POST',
+                        redirect: 'manual'
+                    });
 
-                    if (response.redirected) {
+                    if (response.type === 'opaqueredirect' || response.status === 0 || (response.status >= 300 && response.status < 400)) {
                         clearClientData();
-                        window.location.href = response.url;
+                        window.location.href = "{{ url_for('reward') }}";
                     } else {
                         console.error('Unexpected response:', await response.text());
                     }
@@ -258,11 +245,36 @@
     <script>
     function openEndTaskModal() {
         document.getElementById("endTaskModal").style.display = "flex";
+        if (window.studyLogger && !window.clickedEndTaskLogged) {
+            studyLogger.logEvent("ClickedEndTask");
+            window.clickedEndTaskLogged = true;
+        }
         // populateSavedDocuments();
     }
 
     function openFeedbackModal() {
         document.getElementById("feedbackModal").style.display = "flex";
+        const answerError = document.getElementById("answer-error-message");
+        if (answerError) {
+            answerError.hidden = true;
+        }
+        const answerBox = document.getElementById("textarea_feedback");
+        if (answerBox) {
+            setTimeout(() => answerBox.focus(), 0);
+        }
+    }
+
+    function openAnswerModalDirect() {
+        if (window.studyLogger && !window.clickedEndTaskLogged) {
+            studyLogger.logEvent("ClickedEndTask");
+            window.clickedEndTaskLogged = true;
+        }
+        const confirmButton = document.getElementById("yes-end-btn");
+        if (confirmButton) {
+            confirmButton.click();
+        } else {
+            openFeedbackModal();
+        }
     }
 
     function closeEndTaskModal() {
@@ -396,6 +408,7 @@
     }
     </script>
 
-    <script src="../static/logger.js"></script>
+    <script>window.SESSION_ID = {{ session_id|tojson }};</script>
+    <script src="{{ url_for('static', filename='logger.js') }}"></script>
 </body>
 </html>

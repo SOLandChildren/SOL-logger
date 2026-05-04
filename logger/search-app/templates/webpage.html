@@ -1,0 +1,40 @@
+{% extends "layout.html" %}
+{% block title %}Web Page{% endblock %}
+{% block content %}
+
+<div class="app-page">
+  <div class="app-toolbar">
+    <a href="{{ url_for('result', query=query, page=page) }}" id="viewer-back-btn" class="app-btn app-btn-back">
+        &larr; Indietro
+    </a>
+    <button type="button"
+            onclick="openAnswerModalDirect()"
+            class="app-btn app-btn-warm"
+            id="end-task-btn">
+      Scrivi la risposta
+    </button>
+  </div>
+
+  <section class="app-panel webpage-panel">
+    <iframe
+        id="webpage-frame"
+        src="{{ url }}"
+        sandbox="allow-same-origin allow-scripts allow-forms"
+        title="Web page viewer">
+    </iframe>
+  </section>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    const viewedUrl = {{ url|tojson }};
+    if (!window.studyLogger) return;
+
+    studyLogger.logEvent("webpageOpened", { url: viewedUrl });
+
+    document.getElementById("viewer-back-btn")?.addEventListener("click", function() {
+        studyLogger.logEvent("webpageClosed", { url: viewedUrl });
+    });
+});
+</script>
+{% endblock %}

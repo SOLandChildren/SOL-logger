@@ -1,0 +1,35 @@
+{% extends "layout.html" %}
+{% block title %}Pezzo sbloccato{% endblock %}
+{% block content %}
+
+<div class="reward-page">
+    <div class="reward-unlock-panel">
+        <img src="{{ url_for('static', filename=unlocked_piece.static_filename) }}"
+             alt="Pezzo puzzle {{ unlocked_piece.task_num }}"
+             class="unlocked-piece-img">
+
+        <h2>Avete sbloccato {% if is_last %}l'{{ unlocked_piece.label }}{% else %}il {{ unlocked_piece.label }}{% endif %} pezzo del puzzle!</h2>
+
+        {% if is_last %}
+        <p>Continuate per vedere tutto il puzzle completo</p>
+        <a href="{{ url_for('thank_you') }}" class="app-btn app-btn-primary reward-final-btn">
+            Continua
+        </a>
+        {% else %}
+        <p>Scoprite gli altri pezzi rispondendo alle prossime domande.</p>
+        <a href="{{ url_for('next_task') }}" id="continue-btn" class="app-btn app-btn-primary reward-continue-btn">
+            Prossima domanda
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+if (window.studyLogger) {
+    studyLogger.logEvent("rewardShown", {
+        piecesEarned: {{ pieces_earned|tojson }},
+        totalTasks: {{ total_tasks }}
+    });
+}
+</script>
+{% endblock %}
