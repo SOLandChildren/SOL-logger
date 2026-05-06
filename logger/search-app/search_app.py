@@ -11,8 +11,12 @@ import csv
 import uuid
 from datetime import datetime
 import re
+import socket
+import ipaddress
+from urllib.parse import urlparse
 from spellchecker import SpellChecker
 from time import time
+import search_backend
 
 app = Flask(__name__)
 
@@ -58,21 +62,38 @@ CORS(app, supports_credentials=True)
 # SERP_endpoint = data["serp_api"]["SERP_endpoint"]
 # f.close()
 
-db_url = "http://search_engine:7002"
+# PyTerrier URL is now defaulted inside search_backend.pyterrier_search()
+# db_url = "http://search_engine:7002"
 rpp = 10  # results per page for pagination; may be changed later
 
 LOG_DIR = 'logs'
 os.makedirs(LOG_DIR, exist_ok=True)
 
-# spell = SpellChecker(language='en') 
-spell = SpellChecker(language='it') # uncomment for final implementation
+SERP_QUERY_FIELD_EVENTS = {
+    'searchResultGenerated',
+    'clickedResult',
+    'cursorEnteredSnippet',
+    'cursorLeftSnippet',
+    'pageNavigationClicked',
+    'resultExposureStarted',
+    'resultExposureEnded',
+    'searchNoResults',
+    'wentBack',
+    'generatedDidYouMean',
+    'hoverOverDidYouMean',
+    'clickedDidYouMeanSuggestion',
+}
 
-with open("API_keys.json") as f:
-    API_KEY = json.load(f)["serp_api"]["api_key"]
+spell = SpellChecker(language='it')
 
-AUTOCOMPLETE_CACHE = {}
-CACHE_TTL = 600  # 10 minutes
-MAX_SUGGESTIONS = 5
+# SerpAPI removed — autocomplete now uses Vertex AI via search_backend.py
+# with open("API_keys.json") as f:
+#     API_KEY = json.load(f)["serp_api"]["api_key"]
+
+# Autocomplete caching now lives inside the backend module (currently none).
+# AUTOCOMPLETE_CACHE = {}
+# CACHE_TTL = 600  # 10 minutes
+# MAX_SUGGESTIONS = 5
 
 def sanitize_query(query):
     # Removes all characters except letters, numbers, and spaces
@@ -364,9 +385,6 @@ def result():
                                reminder=reminder,
                                search_error="Inserisci una domanda prima di cercare.")
 
-    url = "/ranking?query="
-    url_affix = "&rpp="
-    maxres = '100' # max 10 pages with max 10 results each
     rpp = 10 # results per page; may be changed later
     query, serpapi_query = sanitize_query(raw_query)
 
@@ -380,9 +398,11 @@ def result():
     def render_no_results(message):
         session["search_results"] = []
         session["query"] = query
+        session["raw_query"] = raw_query
         session["serpapi_query"] = serpapi_query
         return render_template(SEARCH_URL, title="Search Results",
                                search_results=[], query=query,
+                               raw_query=raw_query,
                                serpapi_query=serpapi_query, page=page,
                                total_pages=0, show_search=True,
                                reminder=reminder,
@@ -407,38 +427,23 @@ def result():
 
     if use_cached_results:
         all_results = [normalize_result(result) for result in cached_results]
+        raw_query = session.get("raw_query", raw_query)
         serpapi_query = session.get("serpapi_query", serpapi_query)
     else:
-        end_query = db_url + url + query + url_affix + maxres
-
         try:
-            response = requests.get(end_query)
-        except requests.ConnectionError:
+            raw_results, _ = search_backend.search(query, page, rpp)
+        except Exception:
             if ALLOW_ANSWER_WITHOUT_RESULTS_FOR_TESTING:
                 return render_no_results("Modalità test: nessun risultato disponibile, ma puoi comunque scrivere una risposta.")
             return render_template(ERROR_URL, show_search=False,
-                                error_title="Connection Error",
-                                error_message="Could not connect to the search engine. Please try again later.",
-                                is_search_engine_error=True), 503
+                                   error_title="Connection Error",
+                                   error_message="Could not connect to the search engine. Please try again later.",
+                                   is_search_engine_error=True), 503
 
-        if response.status_code != 200:
-            return render_no_results("Non ci sono risultati per la vostra domanda. Provate a fare un'altra domanda!")
-
-        try:
-            search_results = response.json()
-        except ValueError:
-            return render_no_results("Non ci sono risultati per la vostra domanda. Provate a fare un'altra domanda!")
-
-        if isinstance(search_results, dict):
-            all_results = search_results.get("itemlist", [])
-        elif isinstance(search_results, list):
-            all_results = search_results
-        else:
-            all_results = []
-
-        all_results = [normalize_result(result) for result in all_results]
+        all_results = [normalize_result(r) for r in raw_results]
         session["search_results"] = all_results
         session["query"] = query
+        session["raw_query"] = raw_query
         session["serpapi_query"] = serpapi_query
 
     if len(all_results) == 0:
@@ -451,7 +456,8 @@ def result():
     end = start + rpp
     return render_template(SEARCH_URL, title="Search Results",
                            search_results=all_results[start:end],
-                           query=query, serpapi_query=serpapi_query,
+                           query=query, raw_query=raw_query,
+                           serpapi_query=serpapi_query,
                            page=page, total_pages=total_pages,
                            show_search=True, reminder=reminder)
 
@@ -501,6 +507,57 @@ def webpage():
         return redirect(url_for('search_page'))
     return render_template("webpage.html", url=url, query=query, page=page, show_search=False)
 
+
+def _is_safe_iframe_url(url):
+    try:
+        parsed = urlparse(url)
+    except (ValueError, TypeError):
+        return False, "malformed-url"
+    if parsed.scheme not in ("http", "https"):
+        return False, f"scheme-not-allowed:{parsed.scheme}"
+    host = parsed.hostname
+    if not host:
+        return False, "no-host"
+    try:
+        for _, _, _, _, sockaddr in socket.getaddrinfo(host, None):
+            ip = ipaddress.ip_address(sockaddr[0])
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+                return False, f"private-ip:{ip}"
+    except (socket.gaierror, ValueError) as e:
+        return False, f"dns-error:{type(e).__name__}"
+    return True, None
+
+
+@app.route("/iframe_check")
+def iframe_check():
+    """Probe a target URL's headers to predict whether it can be embedded in an iframe.
+    Used by webpage.html to log webpageLoadSucceeded / webpageLoadFailed.
+    """
+    url = request.args.get("url", "")
+    if not url:
+        return jsonify({"blocked": None, "reason": "empty-url"})
+
+    safe, ssrf_reason = _is_safe_iframe_url(url)
+    if not safe:
+        return jsonify({"blocked": None, "reason": f"ssrf-rejected:{ssrf_reason}"})
+
+    try:
+        r = requests.head(url, allow_redirects=True, timeout=3)
+        if r.status_code == 405:
+            r = requests.get(url, allow_redirects=True, timeout=3, stream=True)
+            r.close()
+        headers = {k.lower(): v for k, v in r.headers.items()}
+        xfo = headers.get("x-frame-options", "").lower()
+        csp = headers.get("content-security-policy", "").lower()
+        if "deny" in xfo or "sameorigin" in xfo:
+            return jsonify({"blocked": True, "reason": f"x-frame-options:{xfo}"})
+        if "frame-ancestors" in csp:
+            return jsonify({"blocked": True, "reason": "csp:frame-ancestors"})
+        return jsonify({"blocked": False, "reason": None})
+    except requests.RequestException as e:
+        return jsonify({"blocked": None, "reason": f"request-error:{type(e).__name__}"})
+
+
 @app.route("/autocomplete")
 def autocomplete():
     query = request.args.get("query")
@@ -508,42 +565,34 @@ def autocomplete():
     if not query or len(query) < 3:
         return jsonify([])
 
-    # ---- Cache lookup ----
-    cached = AUTOCOMPLETE_CACHE.get(query)
-    if cached and time() - cached["time"] < CACHE_TTL:
-        return jsonify(cached["data"])
-
     try:
-        response = requests.get(
-            "https://serpapi.com/search.json",
-            params={
-                "engine": "google_autocomplete",
-                "q": query,
-                "api_key": API_KEY,
-                # uncomment for italian:
-                "hl": "it",
-            },
-            timeout=5
-        )
-
-        response.raise_for_status()
-        data = response.json()
-
-        suggestions = [
-            s["value"] for s in data.get("suggestions", [])
-        ][:MAX_SUGGESTIONS]
-
-        # ---- Store in cache ----
-        AUTOCOMPLETE_CACHE[query] = {
-            "time": time(),
-            "data": suggestions
-        }
-
+        suggestions = search_backend.autocomplete(query)
         return jsonify(suggestions)
-
-    except requests.RequestException as e:
-        # graceful fallback (no retries)
+    except Exception:
         return jsonify([]), 200
+
+    # ---- Old SerpAPI implementation (kept commented for fallback reference) ----
+    # cached = AUTOCOMPLETE_CACHE.get(query)
+    # if cached and time() - cached["time"] < CACHE_TTL:
+    #     return jsonify(cached["data"])
+    # try:
+    #     response = requests.get(
+    #         "https://serpapi.com/search.json",
+    #         params={
+    #             "engine": "google_autocomplete",
+    #             "q": query,
+    #             "api_key": API_KEY,
+    #             "hl": "it",
+    #         },
+    #         timeout=5
+    #     )
+    #     response.raise_for_status()
+    #     data = response.json()
+    #     suggestions = [s["value"] for s in data.get("suggestions", [])][:MAX_SUGGESTIONS]
+    #     AUTOCOMPLETE_CACHE[query] = {"time": time(), "data": suggestions}
+    #     return jsonify(suggestions)
+    # except requests.RequestException:
+    #     return jsonify([]), 200
 
 @app.route('/log_session', methods=['POST'])
 def log_session():
@@ -560,6 +609,8 @@ def log_session():
     if not (user_id and task_number and session_id and isinstance(logs, list) and logs):
         print("Missing required data: user_id, task_number, session_id or logs")
         return jsonify({"error": "Missing user_id, task_number, session_id or logs"}), 400
+
+    warn_logging_contract_issues(logs, task_number)
 
     log_id = session.get('log_id')
     if not log_id:
@@ -578,6 +629,70 @@ def log_session():
             f.write(json.dumps(entry) + '\n')
 
     return jsonify({"status": "logged", "file": filename}), 200
+
+def warn_logging_contract_issues(logs, default_task_number):
+    previous_query_submit = None
+
+    for index, entry in enumerate(logs, start=1):
+        if not isinstance(entry, dict):
+            print(f"[Logging WARN] log entry {index} is not an object: {entry}")
+            previous_query_submit = None
+            continue
+
+        event_type = entry.get('type')
+
+        if event_type == 'querySubmitted':
+            marker = (
+                entry.get('task_number') or default_task_number,
+                (entry.get('query') or '').strip(),
+            )
+            if marker == previous_query_submit:
+                print(
+                    "[Logging WARN] duplicate consecutive querySubmitted "
+                    f"for task/query at log entry {index}: {entry}"
+                )
+            previous_query_submit = marker
+        else:
+            previous_query_submit = None
+
+        if event_type == 'webpageClosed':
+            missing_fields = [
+                field for field in ('url', 'durationMs', 'exitReason')
+                if field not in entry
+            ]
+            if missing_fields:
+                print(
+                    "[Logging WARN] webpageClosed missing fields "
+                    f"{missing_fields} at log entry {index}: {entry}"
+                )
+
+        if event_type == 'pageNavigationClicked' and entry.get('toPage') is None:
+            print(
+                "[Logging WARN] pageNavigationClicked has null toPage "
+                f"at log entry {index}: {entry}"
+            )
+
+        if event_type == 'wentBack':
+            missing_fields = [
+                field for field in ('fromURL', 'toURL', 'returnType')
+                if not entry.get(field)
+            ]
+            if missing_fields:
+                print(
+                    "[Logging WARN] wentBack missing fields "
+                    f"{missing_fields} at log entry {index}: {entry}"
+                )
+
+        if event_type in SERP_QUERY_FIELD_EVENTS:
+            missing_fields = [
+                field for field in ('rawQuery', 'sanitizedQuery')
+                if field not in entry
+            ]
+            if missing_fields:
+                print(
+                    "[Logging WARN] SERP event missing query fields "
+                    f"{missing_fields} at log entry {index}: {entry}"
+                )
 
 @app.route('/end', methods=['POST'])
 def end_task():
