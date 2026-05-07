@@ -1,22 +1,22 @@
+import requests, json
+import math
+import os
+import csv
+import re
+import socket
+import ipaddress
+import search_backend
+import uuid
+import random
+
 from urllib import response
 from flask import Flask, render_template, url_for, request, session, redirect, jsonify
 from flask_session import Session
 from flask_cors import CORS
-import requests, json
 from forms import SearchForm
-import collections
-import math
-import os
-import csv
-import uuid
 from datetime import datetime
-import re
-import socket
-import ipaddress
 from urllib.parse import urlparse
 from spellchecker import SpellChecker
-from time import time
-import search_backend
 
 app = Flask(__name__)
 
@@ -41,29 +41,6 @@ Session(app)
 # 2. Enable CORS LAST
 # -------------------------------------------------
 CORS(app, supports_credentials=True)
-
-## old implementation for initialising the Flask APP, keeping it in case new implementation breaks
-# app = Flask(__name__)
-
-# CORS(app)
-
-# app.config['SECRET_KEY'] = 'OtulwLo7gQ'       
-# app.config.update(
-#     SESSION_COOKIE_SECURE=False,    
-#     SESSION_COOKIE_SAMESITE='Lax', 
-# )
-
-# Session(app)
-
-# f = open("API_keys.json")
-# data = json.load(f)
-
-# API_KEY = data["serp_api"]["api_key"]
-# SERP_endpoint = data["serp_api"]["SERP_endpoint"]
-# f.close()
-
-# PyTerrier URL is now defaulted inside search_backend.pyterrier_search()
-# db_url = "http://search_engine:7002"
 rpp = 10  # results per page for pagination; may be changed later
 
 LOG_DIR = 'logs'
@@ -86,21 +63,17 @@ SERP_QUERY_FIELD_EVENTS = {
 
 spell = SpellChecker(language='it')
 
-# SerpAPI removed — autocomplete now uses Vertex AI via search_backend.py
-# with open("API_keys.json") as f:
-#     API_KEY = json.load(f)["serp_api"]["api_key"]
 
-# Autocomplete caching now lives inside the backend module (currently none).
-# AUTOCOMPLETE_CACHE = {}
-# CACHE_TTL = 600  # 10 minutes
-# MAX_SUGGESTIONS = 5
+def _sanitize_for_filename(value):
+    cleaned = re.sub(r'[^A-Za-z0-9._-]', '_', str(value))
+    return cleaned[:64] or "anon"
+
 
 def sanitize_query(query):
     # Removes all characters except letters, numbers, and spaces
     # This is necessary for PyTerrier compatibility
     cleaned_query =  re.sub(r'[^\w\s]', '', query)
-    
-    # try:
+
     words = spell.split_words(cleaned_query)
     misspelled = spell.unknown(words)
     corrected_query = ''
@@ -112,24 +85,7 @@ def sanitize_query(query):
                 word = corrected_word
         corrected_query += word
         corrected_query += ' '
-    # except:
-    #     corrected_query = cleaned_query
-    
-    ## using external API - edit to suit the specific API used
-
-    # serpapi_payload = {
-    #     "engine": "google",
-    #     "q": cleaned_query,
-    #     "num": 10,
-    #     "filter": 0,
-    #     "api_key": API_KEY
-    #     }
-    
-    # serpapi_response = requests.get(url=SERP_endpoint, params=serpapi_payload)
-
-    # serpapi_results = serpapi_response.json()
-    # serpapi_query = serpapi_results["search_information"].get("showing_results_for", cleaned_query)
-
+        
     return cleaned_query, corrected_query.strip()
 
 def load_user_topics(filepath='data/user_topics.csv'):
@@ -160,7 +116,7 @@ PUZZLE_ASSET_DIR = 'puzzle_pieces'
 # ------------------------------------------------------------------------------------------------------------------------------------------
 # True  = allow answer submission even when there are no search results.
 # False = production behavior: answer button only appears after valid results.
-ALLOW_ANSWER_WITHOUT_RESULTS_FOR_TESTING = True
+ALLOW_ANSWER_WITHOUT_RESULTS_FOR_TESTING = False
 #-------------------------------------------------------------------------------------------------------------------------------------------
 
 def get_total_tasks(user_id):
@@ -174,6 +130,40 @@ def get_total_tasks(user_id):
             break
     return count
 
+def assign_random_task_order(user_id):
+    total_tasks = get_total_tasks(user_id)
+    task_order = [str(i) for i in range(1, total_tasks + 1)]
+
+    # Consistent within this experiment session, new order across new sessions
+    seed = f"{user_id}-{session.get('session_id')}"
+    rng = random.Random(seed)
+    rng.shuffle(task_order)
+
+    session["task_order"] = task_order
+    session["task_position"] = 0
+    session["task_number"] = task_order[0] if task_order else None
+    
+    print(f"[Task Randomization] user_id={user_id}, session_id={session.get('session_id')}, task_order={task_order}")
+
+    return task_order
+
+def generate_log_id():
+    return f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{uuid.uuid4().hex[:8]}"
+
+
+def advance_to_next_random_task():
+    task_order = session.get("task_order", [])
+    task_position = session.get("task_position", 0)
+
+    next_position = task_position + 1
+
+    if next_position >= len(task_order):
+        return False
+
+    session["task_position"] = next_position
+    session["task_number"] = task_order[next_position]
+    return True
+
 def current_phase():
     user_id = session.get('user_id')
     if not user_id:
@@ -185,6 +175,8 @@ def current_phase():
     total_tasks = get_total_tasks(user_id)
 
     if total_tasks and len(pieces) >= total_tasks:
+        return 'completed'
+    if not task_number:
         return 'completed'
     if task_number in pieces:
         return 'reward'
@@ -237,31 +229,36 @@ def get_user_config(user_id):
         )
     return user
 
-def validate_puzzle_gif(user_id, csv_field):
+def validate_reward_asset(user_id, csv_field, allow_video=False):
     user = get_user_config(user_id)
     filename = user.get(csv_field, '').strip()
     if not filename:
         raise PuzzleConfigError(
             f"Missing '{csv_field}' in data/user_topics.csv for user '{user_id}'."
         )
-    if os.path.basename(filename) != filename or not filename.lower().endswith('.gif'):
+
+    allowed_exts = ('.gif', '.mp4') if allow_video else ('.gif',)
+    if os.path.basename(filename) != filename or not filename.lower().endswith(allowed_exts):
+        exts_label = ".gif or .mp4" if allow_video else ".gif"
         raise PuzzleConfigError(
             f"Invalid '{csv_field}' value for user '{user_id}': '{filename}'. "
-            "Use a .gif filename stored directly in static/puzzle_pieces."
+            f"Use a {exts_label} filename stored directly in static/puzzle_pieces."
         )
 
     static_path = os.path.join(app.static_folder, PUZZLE_ASSET_DIR, filename)
     if not os.path.isfile(static_path):
         raise PuzzleConfigError(
-            f"Missing GIF file for user '{user_id}': static/{PUZZLE_ASSET_DIR}/{filename}."
+            f"Missing reward asset for user '{user_id}': static/{PUZZLE_ASSET_DIR}/{filename}."
         )
     return f"{PUZZLE_ASSET_DIR}/{filename}"
 
-def get_unlocked_piece(user_id, task_number):
+def get_unlocked_piece(user_id, task_number, display_task_number=None):
     try:
         task_num = int(task_number)
     except (TypeError, ValueError):
         raise PuzzleConfigError(f"Invalid task number for puzzle reward: '{task_number}'.")
+
+    label_number = display_task_number if display_task_number is not None else task_num
 
     labels = {
         1: "primo",
@@ -270,8 +267,8 @@ def get_unlocked_piece(user_id, task_number):
     }
     return {
         'task_num': task_num,
-        'label': labels.get(task_num, str(task_num)),
-        'static_filename': validate_puzzle_gif(user_id, f'{task_num}_gif'),
+        'label': labels.get(label_number, str(label_number)),
+        'static_filename': validate_reward_asset(user_id, f'{task_num}_gif'),
     }
 
 @app.context_processor
@@ -326,16 +323,23 @@ def search_page():
 
 @app.route('/start', methods=['GET', 'POST'])
 def start_page():
-    if current_phase() != 'pre_id':
-        return redirect(phase_redirect_url())
     if request.method == 'POST':
         user_id = request.form.get('user_id')
+        session.clear()
         session['user_id'] = user_id
         session['session_id'] = str(uuid.uuid4())
-        session['task_number'] = '1'
+        session['log_id'] = generate_log_id()
         session['pieces_earned'] = []
         session['tasks_started'] = []
+        session['last_active'] = datetime.now().isoformat()
+        
+        assign_random_task_order(user_id)
+        
         return redirect(url_for('task'))
+
+    if current_phase() != 'pre_id':
+        return redirect(phase_redirect_url())
+    
     with open("data/uids.txt") as f:
         val_ids = [line.strip() for line in f if line.strip()]
     return render_template('start.html', show_search=False, valid_ids=val_ids)
@@ -356,8 +360,18 @@ def task():
 
     topic = user.get(str(task_number)+'_full')
     topic_title = user.get(str(task_number)+'_short')
-
-    return render_template("task.html", show_search=False, task_number=task_number, topic=topic, topic_title=topic_title, user_id=user_id)
+    
+    display_task_number  = session.get("task_position", 0) + 1
+    
+    return render_template(
+        'task.html',
+        show_search=False,
+        task_number=display_task_number,
+        actual_topic_number=task_number,
+        topic=topic,
+        topic_title=topic_title,
+        user_id=user_id
+    )
 
 @app.route("/result", methods=['GET', 'POST'])
 def result():
@@ -386,7 +400,7 @@ def result():
                                search_error="Inserisci una domanda prima di cercare.")
 
     rpp = 10 # results per page; may be changed later
-    query, serpapi_query = sanitize_query(raw_query)
+    query, corrected_query = sanitize_query(raw_query)
 
     if not query.strip():
         return render_template(HOME_URL,
@@ -399,11 +413,11 @@ def result():
         session["search_results"] = []
         session["query"] = query
         session["raw_query"] = raw_query
-        session["serpapi_query"] = serpapi_query
+        session["corrected_query"] = corrected_query
         return render_template(SEARCH_URL, title="Search Results",
                                search_results=[], query=query,
                                raw_query=raw_query,
-                               serpapi_query=serpapi_query, page=page,
+                               corrected_query=corrected_query, page=page,
                                total_pages=0, show_search=True,
                                reminder=reminder,
                                no_results_message=message)
@@ -428,7 +442,7 @@ def result():
     if use_cached_results:
         all_results = [normalize_result(result) for result in cached_results]
         raw_query = session.get("raw_query", raw_query)
-        serpapi_query = session.get("serpapi_query", serpapi_query)
+        corrected_query = session.get("corrected_query", corrected_query)
     else:
         try:
             raw_results, _ = search_backend.search(query, page, rpp)
@@ -444,7 +458,7 @@ def result():
         session["search_results"] = all_results
         session["query"] = query
         session["raw_query"] = raw_query
-        session["serpapi_query"] = serpapi_query
+        session["corrected_query"] = corrected_query
 
     if len(all_results) == 0:
         return render_no_results("Non ci sono risultati per la vostra domanda. Provate a fare un'altra domanda!")
@@ -457,42 +471,9 @@ def result():
     return render_template(SEARCH_URL, title="Search Results",
                            search_results=all_results[start:end],
                            query=query, raw_query=raw_query,
-                           serpapi_query=serpapi_query,
+                           corrected_query=corrected_query,
                            page=page, total_pages=total_pages,
                            show_search=True, reminder=reminder)
-
-    # f = open("API_keys.json")
-    # data = json.load(f)
-
-    # API_KEY = data["serp_api"]["api_key"]
-    # SERP_endpoint = data["serp_api"]["SERP_endpoint"]
-    # f.close()
-
-    # print(API_KEY, SERP_endpoint)
-
-    # payload = {
-
-    #     "engine": "google",
-    #     "q": query,
-    #     "start": page * 10,
-    #     "num": 10,
-    #     "filter": 0,
-    #     "api_key": API_KEY
-
-    #     }
-
-    # SERP_response = requests.get(url=SERP_endpoint, params=payload)
-
-    # search_results = SERP_response.json()
-
-    # if len(search_results["organic_results"]) == 0:
-    #         pass
-    # else:
-    #     total_results = len(search_results["organic_results"])
-    #     total_pages = min(10, math.ceil(total_results / rpp))
-    #     start = (page - 1) * rpp
-    #     end = start + rpp
-    #     return render_template(SEARCH_URL, title="Search Results", search_results = search_results['itemlist'][start:end], query=query, page=page, total_pages = total_pages, show_search=True, reminder=reminder)
 
 @app.route("/webpage")
 def webpage():
@@ -506,7 +487,6 @@ def webpage():
     if not url:
         return redirect(url_for('search_page'))
     return render_template("webpage.html", url=url, query=query, page=page, show_search=False)
-
 
 def _is_safe_iframe_url(url):
     try:
@@ -526,7 +506,6 @@ def _is_safe_iframe_url(url):
     except (socket.gaierror, ValueError) as e:
         return False, f"dns-error:{type(e).__name__}"
     return True, None
-
 
 @app.route("/iframe_check")
 def iframe_check():
@@ -557,7 +536,7 @@ def iframe_check():
     except requests.RequestException as e:
         return jsonify({"blocked": None, "reason": f"request-error:{type(e).__name__}"})
 
-
+# Powers the search-bar autocomplete dropdown in layout.html.
 @app.route("/autocomplete")
 def autocomplete():
     query = request.args.get("query")
@@ -571,29 +550,6 @@ def autocomplete():
     except Exception:
         return jsonify([]), 200
 
-    # ---- Old SerpAPI implementation (kept commented for fallback reference) ----
-    # cached = AUTOCOMPLETE_CACHE.get(query)
-    # if cached and time() - cached["time"] < CACHE_TTL:
-    #     return jsonify(cached["data"])
-    # try:
-    #     response = requests.get(
-    #         "https://serpapi.com/search.json",
-    #         params={
-    #             "engine": "google_autocomplete",
-    #             "q": query,
-    #             "api_key": API_KEY,
-    #             "hl": "it",
-    #         },
-    #         timeout=5
-    #     )
-    #     response.raise_for_status()
-    #     data = response.json()
-    #     suggestions = [s["value"] for s in data.get("suggestions", [])][:MAX_SUGGESTIONS]
-    #     AUTOCOMPLETE_CACHE[query] = {"time": time(), "data": suggestions}
-    #     return jsonify(suggestions)
-    # except requests.RequestException:
-    #     return jsonify([]), 200
-
 @app.route('/log_session', methods=['POST'])
 def log_session():
     print("Received /log_session request")
@@ -605,30 +561,70 @@ def log_session():
     
     user_id = session.get('user_id')
     task_number = session.get('task_number')
+    server_session_id = session.get('session_id')
     print(f"user_id: {user_id}, task_number: {task_number}, session_id: {session_id}")
     if not (user_id and task_number and session_id and isinstance(logs, list) and logs):
         print("Missing required data: user_id, task_number, session_id or logs")
         return jsonify({"error": "Missing user_id, task_number, session_id or logs"}), 400
 
+    if session_id != server_session_id:
+        print(
+            "[Logging REJECT] client/server session mismatch: "
+            f"client={session_id}, server={server_session_id}, user_id={user_id}"
+        )
+        return jsonify({"error": "Session mismatch"}), 409
+
+    mismatched_uids = [
+        entry.get('uid')
+        for entry in logs
+        if isinstance(entry, dict) and entry.get('uid') and entry.get('uid') != user_id
+    ]
+    if mismatched_uids:
+        print(
+            "[Logging REJECT] log uid/server user mismatch: "
+            f"log_uids={sorted(set(mismatched_uids))}, server_user={user_id}"
+        )
+        return jsonify({"error": "User mismatch"}), 409
+
     warn_logging_contract_issues(logs, task_number)
 
     log_id = session.get('log_id')
     if not log_id:
-        log_id = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        log_id = generate_log_id()
         session['log_id'] = log_id
 
-    filename = f"{user_id}_{log_id}.log"
-    filepath = os.path.join(LOG_DIR, filename)
+    visible_task_number = session.get("task_position", 0) + 1
+    actual_topic_number = task_number
+    task_order          = session.get("task_order", [])
 
-    server_session_id = session.get('session_id')
-    with open(filepath, 'a', encoding='utf-8') as f:
+    safe_user = _sanitize_for_filename(user_id)
+    combined_filename = f"{safe_user}_{log_id}_FULL.log"
+    task_filename     = f"{safe_user}_{log_id}_task{visible_task_number}_topic{actual_topic_number}.log"
+
+    combined_path = os.path.join(LOG_DIR, combined_filename)
+    task_path     = os.path.join(LOG_DIR, task_filename)
+
+    with open(combined_path, 'a', encoding='utf-8') as full_f, \
+         open(task_path, 'a', encoding='utf-8') as task_f:
         for entry in logs:
-            entry['task_number'] = task_number
+            enriched = dict(entry)
+            enriched['task_number']         = visible_task_number
+            enriched['actual_topic_number'] = actual_topic_number
+            enriched['task_order']          = task_order
             if server_session_id:
-                entry['sessionID'] = server_session_id
-            f.write(json.dumps(entry) + '\n')
+                enriched['sessionID'] = server_session_id
+            if not enriched.get('uid') and user_id:
+                enriched['uid'] = user_id
 
-    return jsonify({"status": "logged", "file": filename}), 200
+            line = json.dumps(enriched) + '\n'
+            full_f.write(line)
+            task_f.write(line)
+
+    return jsonify({
+        "status":        "logged",
+        "combined_file": combined_filename,
+        "task_file":     task_filename,
+    }), 200
 
 def warn_logging_contract_issues(logs, default_task_number):
     previous_query_submit = None
@@ -711,13 +707,20 @@ def end_task():
 
 @app.route('/next_task')
 def next_task():
-    """Advance to the next task number and redirect to the Scenario Page."""
     phase = current_phase()
     if phase != 'reward':
         return redirect(phase_redirect_url(phase))
-    task_number = session.get('task_number')
-    next_num = str(int(task_number) + 1)
-    session['task_number'] = next_num
+    
+    has_next_task = advance_to_next_random_task()
+    
+    session.pop("search_results", None)
+    session.pop("query", None)
+    session.pop("raw_query", None)
+    session.pop("corrected_query", None)
+    
+    if not has_next_task:
+        return redirect(url_for('thank_you'))
+    
     return redirect(url_for('task'))
 
 @app.route('/reward')
@@ -730,14 +733,16 @@ def reward():
     pieces = session.get('pieces_earned', [])
     total_tasks = get_total_tasks(user_id)
     is_last = len(pieces) >= total_tasks
+    display_task_number = session.get("task_position", 0) + 1
     try:
-        unlocked_piece = get_unlocked_piece(user_id, task_number)
+        unlocked_piece = get_unlocked_piece(user_id, task_number, display_task_number)
     except PuzzleConfigError as err:
         return render_puzzle_config_error(str(err))
 
     return render_template('reward.html',
                            show_search=False,
-                           task_number=task_number,
+                           task_number=display_task_number,
+                           actual_topic_number=task_number,
                            pieces_earned=pieces,
                            unlocked_piece=unlocked_piece,
                            total_tasks=total_tasks,
@@ -752,7 +757,7 @@ def thank_you():
     pieces = session.get('pieces_earned', [])
     total_tasks = get_total_tasks(user_id)
     try:
-        full_puzzle_static_filename = validate_puzzle_gif(user_id, 'full_gif')
+        full_puzzle_static_filename = validate_reward_asset(user_id, 'full_gif', allow_video=True)
     except PuzzleConfigError as err:
         return render_puzzle_config_error(str(err))
     # Don't clear session yet — the "Finish Experiment" button needs

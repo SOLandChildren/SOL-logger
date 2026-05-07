@@ -27,6 +27,31 @@
         {{ search_error or "Inserisci una domanda prima di cercare." }}
       </p>
     </div>
+
+    {% if reminder %}
+    <button type="button"
+            id="task-help-btn"
+            class="task-help-btn"
+            data-task-number="{{ session.get('task_position', 0) + 1 }}"
+            aria-label="Mostra domanda del task">?</button>
+    {% endif %}
   </section>
+
+  {% if reminder %}
+  <div id="task-help-modal" class="modal">
+    <div class="modal-content-box">
+      <span class="close" id="task-help-close-btn" aria-label="Chiudi">&times;</span>
+      <div class="task-help-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 18h6"/>
+          <path d="M10 22h4"/>
+          <path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1V18h6v-1.2c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z"/>
+        </svg>
+      </div>
+      <span class="task-help-label">La domanda a cui devi rispondere è la seguente:</span>
+      <p class="task-help-question">{{ reminder }}</p>
+    </div>
+  </div>
+  {% endif %}
 </div>
 {% endblock content %}

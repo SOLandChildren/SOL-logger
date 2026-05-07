@@ -35,7 +35,15 @@ def run_logger_node_script(script_body):
             data: {{}},
             getItem(key) {{ return this.data[key] || null; }},
             setItem(key, value) {{ this.data[key] = String(value); }},
-            removeItem(key) {{ delete this.data[key]; }}
+            removeItem(key) {{ delete this.data[key]; }},
+            clear() {{ this.data = {{}}; }}
+        }};
+        global.sessionStorage = {{
+            data: {{}},
+            getItem(key) {{ return this.data[key] || null; }},
+            setItem(key, value) {{ this.data[key] = String(value); }},
+            removeItem(key) {{ delete this.data[key]; }},
+            clear() {{ this.data = {{}}; }}
         }};
         global.document = {{
             getElementById() {{ return null; }},
@@ -115,26 +123,71 @@ def test_log_session_warns_only_for_expected_logging_contract_issues():
 
     assert "def warn_logging_contract_issues(logs, default_task_number):" in source
     assert "warn_logging_contract_issues(logs, task_number)" in source
+    assert "if session_id != server_session_id:" in source
+    assert 'return jsonify({"error": "Session mismatch"}), 409' in source
+    assert "mismatched_uids = [" in source
+    assert 'return jsonify({"error": "User mismatch"}), 409' in source
     assert "duplicate consecutive querySubmitted" in source
     assert "pageNavigationClicked has null toPage" in source
     assert "wentBack missing fields" in source
     assert "SERP event missing query fields" in source
     assert "('url', 'durationMs', 'exitReason')" in source
     assert "[Logging WARN] webpageClosed missing fields" in source
-    assert "return jsonify({\"status\": \"logged\", \"file\": filename}), 200" in source
+    assert '"combined_file": combined_filename' in source
+    assert '"task_file":     task_filename' in source
 
 
-def test_log_session_does_not_create_aggregate_output_files():
+def test_log_session_writes_full_and_per_task_logs_without_aggregate_outputs():
     source = SEARCH_APP.read_text(encoding="utf-8")
 
-    assert 'filename = f"{user_id}_{log_id}.log"' in source
-    assert "f.write(json.dumps(entry) + '\\n')" in source
+    assert 'combined_filename = f"{safe_user}_{log_id}_FULL.log"' in source
+    assert 'task_filename     = f"{safe_user}_{log_id}_task{visible_task_number}_topic{actual_topic_number}.log"' in source
+    assert "full_f.write(line)" in source
+    assert "task_f.write(line)" in source
     assert "write_aggregate_json" not in source
     assert "log_aggregation" not in source
     assert "_aggregate.log" not in source
     assert "with_suffix(\".json\")" not in source
     assert not (APP_ROOT / "log_aggregation.py").exists()
     assert not (APP_ROOT / "tests" / "test_log_aggregation.py").exists()
+
+
+def test_start_post_resets_server_session_before_new_experiment_state():
+    source = SEARCH_APP.read_text(encoding="utf-8")
+    start_index = source.index("def start_page():")
+    post_index = source.index("if request.method == 'POST':", start_index)
+    clear_index = source.index("session.clear()", post_index)
+    user_index = source.index("session['user_id'] = user_id", post_index)
+    session_id_index = source.index("session['session_id'] = str(uuid.uuid4())", post_index)
+    log_id_index = source.index("session['log_id'] = generate_log_id()", post_index)
+    order_index = source.index("assign_random_task_order(user_id)", post_index)
+
+    assert post_index < clear_index < user_index < session_id_index < log_id_index < order_index
+    assert "session['pieces_earned'] = []" in source
+    assert "session['tasks_started'] = []" in source
+    assert "session['last_active'] = datetime.now().isoformat()" in source
+    assert "session[\"search_results\"]" not in source[post_index:order_index]
+
+
+def test_client_cleanup_clears_local_session_and_in_memory_logger_state():
+    logger_source = LOGGER_JS.read_text(encoding="utf-8")
+    layout_source = LAYOUT_HTML.read_text(encoding="utf-8")
+    end_source = (APP_ROOT / "templates" / "end.html").read_text(encoding="utf-8")
+
+    assert "clearClientData(options = {})" in logger_source
+    assert "localStorage.clear()" in logger_source
+    assert "sessionStorage.clear()" in logger_source
+    assert "this.logs = []" in logger_source
+    assert "this.historyTracker = []" in logger_source
+    assert "studyLogger.clearClientData({ createNewSessionID: true })" in logger_source
+    assert 'entry.type === "idSubmitted"' in logger_source
+    assert "entry.uid === currentUser" in logger_source
+    assert "sessionID: this.sessionID" in logger_source
+    assert "window.studyLogger.clearClientData()" in layout_source
+    assert "sessionStorage.clear()" in layout_source
+    assert "await studyLogger.sendLogs();" in end_source
+    assert "clearClientData();" in end_source
+    assert 'window.location.href = "{{ url_for(\'welcome\') }}?reset=1";' in end_source
 
 
 def test_duplicate_query_submit_suppression_contract():
@@ -241,7 +294,9 @@ if __name__ == "__main__":
         test_webpage_closed_has_duration_exit_reason_guard_and_fallback,
         test_answer_submission_closes_open_webpage_before_task_ended,
         test_log_session_warns_only_for_expected_logging_contract_issues,
-        test_log_session_does_not_create_aggregate_output_files,
+        test_log_session_writes_full_and_per_task_logs_without_aggregate_outputs,
+        test_start_post_resets_server_session_before_new_experiment_state,
+        test_client_cleanup_clears_local_session_and_in_memory_logger_state,
         test_duplicate_query_submit_suppression_contract,
         test_italian_pagination_target_parsing,
         test_went_back_return_metadata_contract,
