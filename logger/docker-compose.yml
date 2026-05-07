@@ -11,6 +11,12 @@ services:
       - ./search-app/static/:/app/static/   # ← Mount the static folder here
       - ./search-app/data/:/data/
       - ./logs:/logs/
+      - ./search-app/API_keys.json:/API_keys.json
+      - ./search-app/service_account.json:/service_account.json
+    environment:
+      SEARCH_BACKEND: "vertex"
+      GOOGLE_APPLICATION_CREDENTIALS: "/service_account.json"
+      PYTHONUNBUFFERED: "1"
     networks:
       - frontend
 

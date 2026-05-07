@@ -10,6 +10,56 @@
         });
     }
 
+    const LOG_TIME_ZONE = "Europe/Zurich";
+
+    function padNumber(value, width = 2) {
+        return String(value).padStart(width, "0");
+    }
+
+    function getZonedParts(date, timeZone) {
+        const formatter = new Intl.DateTimeFormat("en-CA", {
+            timeZone,
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: false,
+            hourCycle: "h23"
+        });
+
+        const parts = {};
+        formatter.formatToParts(date).forEach(part => {
+            if (part.type !== "literal") {
+                parts[part.type] = Number(part.value);
+            }
+        });
+        return parts;
+    }
+
+    function formatSwissTimestamp(date = new Date()) {
+        const parts = getZonedParts(date, LOG_TIME_ZONE);
+        const milliseconds = date.getMilliseconds();
+        const zonedAsUTC = Date.UTC(
+            parts.year,
+            parts.month - 1,
+            parts.day,
+            parts.hour,
+            parts.minute,
+            parts.second,
+            milliseconds
+        );
+        const offsetMinutes = Math.round((zonedAsUTC - date.getTime()) / 60000);
+        const offsetSign = offsetMinutes >= 0 ? "+" : "-";
+        const absoluteOffset = Math.abs(offsetMinutes);
+
+        return `${parts.year}-${padNumber(parts.month)}-${padNumber(parts.day)}`
+            + `T${padNumber(parts.hour)}:${padNumber(parts.minute)}:${padNumber(parts.second)}`
+            + `.${padNumber(milliseconds, 3)}${offsetSign}`
+            + `${padNumber(Math.floor(absoluteOffset / 60))}:${padNumber(absoluteOffset % 60)}`;
+    }
+
     const logger = {
         sessionID: null,
         logs: [],
@@ -36,7 +86,7 @@
         logEvent(type, details = {}) {
             const event = {
                 type,
-                timestamp: new Date().toISOString(),
+                timestamp: formatSwissTimestamp(),
                 sessionID: this.sessionID,
                 ...details
             };
@@ -113,44 +163,61 @@ if (taskbtn) {
 }
 
 const searchbox = document.getElementById("search-box");
+let lastAutocompleteSelection = null;
+
+function getAutocompleteSuggestions() {
+    return Array.isArray(window.autoCompleteSuggestions)
+        ? window.autoCompleteSuggestions
+        : [];
+}
+
+function logAutocompleteSelection(value, trigger) {
+    const selectedSuggestion = (value || "").trim();
+    if (!selectedSuggestion) return;
+    if (!getAutocompleteSuggestions().includes(selectedSuggestion)) return;
+    if (lastAutocompleteSelection === selectedSuggestion) return;
+
+    lastAutocompleteSelection = selectedSuggestion;
+    studyLogger.logEvent("choseAutoCompleteSuggestion", {
+        query: searchbox?.value || "",
+        selectedSuggestion,
+        trigger
+    });
+}
+
 if (searchbox) {
     searchbox.addEventListener("focus", () => {
         studyLogger.logEvent("queryBoxFocused");
     });
 
-    // searchbox.addEventListener("change", ()=>{
-    //     const value = searchbox.value;
-    //     if(window.autoCompleteSuggestions && window.autoCompleteSuggestions.includes(value)){
-    //         studyLogger.logEvent("choseAutoCompleteSuggestion", {
-    //             "selectedSuggestion": value
-    //         });
-    //     }
-    // });
+    searchbox.addEventListener("change", () => {
+        logAutocompleteSelection(searchbox.value, "change");
+    });
+
+    searchbox.addEventListener("input", () => {
+        if (searchbox.value.trim() !== lastAutocompleteSelection) {
+            lastAutocompleteSelection = null;
+        }
+    });
 }
 
 const querySuggestionsList = document.getElementById("query-suggestions");
 if(querySuggestionsList){
     querySuggestionsList.addEventListener("mouseover", (e) => {
-    const li = e.target.closest("li");
-    if (!li) return;
+    const suggestionElement = e.target.closest("li") || e.target.closest("option");
+    if (!suggestionElement) return;
 
     studyLogger.logEvent("hoverOverQuerySuggestions", {
             query: searchbox?.value || "",
-            hoveredSuggestion: li.textContent,
+            hoveredSuggestion: suggestionElement.value || suggestionElement.textContent,
         });
     });
     
     querySuggestionsList.addEventListener("pointerdown", (e) => {
-        const li = e.target.closest("li");
-        if (!li) return;
+        const suggestionElement = e.target.closest("li") || e.target.closest("option");
+        if (!suggestionElement) return;
 
-        const value = li.textContent;
-
-        if (window.autoCompleteSuggestions && window.autoCompleteSuggestions.includes(value)) {
-            studyLogger.logEvent("choseAutoCompleteSuggestion", {
-                selectedSuggestion: value
-            });
-        }
+        logAutocompleteSelection(suggestionElement.value || suggestionElement.textContent, "pointerdown");
     });
 
 }
@@ -158,13 +225,26 @@ if(querySuggestionsList){
 
 const searchbar = document.getElementById("search-bar")
 if (searchbar) {
-    let _lastQueryLog = { q: null, t: 0 };
+    let querySubmitInProgress = false;
+    let submittedQuery = "";
     searchbar.addEventListener("submit", (e) => {
         const query = document.getElementById("search-box")?.value || "";
-        const now = Date.now();
-        if (_lastQueryLog.q === query && now - _lastQueryLog.t < 300) return;
-        _lastQueryLog = { q: query, t: now };
+        if (querySubmitInProgress && submittedQuery === query) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            return;
+        }
+
+        flushActiveResultExposures("new-search");
+        logAutocompleteSelection(query, "submit");
+        querySubmitInProgress = true;
+        submittedQuery = query;
         studyLogger.logEvent("querySubmitted", { query });
+    });
+
+    window.addEventListener("pageshow", () => {
+        querySubmitInProgress = false;
+        submittedQuery = "";
     });
 }
 
@@ -173,6 +253,70 @@ function getSearchAppLocation(query, page){
     search_params.set("query", query);
     search_params.set("page", page);
     return window.location.origin + "/result?" + search_params.toString();
+}
+
+function getCurrentSearchContext() {
+    const panel = document.querySelector(".serp-panel");
+    const firstResult = document.querySelector("article.content-section");
+    const query = firstResult?.getAttribute("query")
+        || panel?.dataset.sanitizedQuery
+        || "";
+    const page = firstResult?.getAttribute("page")
+        || panel?.dataset.page
+        || "";
+    const rawQuery = firstResult?.dataset.rawQuery
+        || panel?.dataset.rawQuery
+        || query;
+    const sanitizedQuery = firstResult?.dataset.sanitizedQuery
+        || panel?.dataset.sanitizedQuery
+        || query;
+
+    return { query, rawQuery, sanitizedQuery, page };
+}
+
+function getPageType(url) {
+    if (!url) return "unknown";
+    try {
+        const parsed = new URL(url, window.location.origin);
+        if (parsed.pathname === "/webpage") return "webpage";
+        if (parsed.pathname === "/result") return "serp";
+        if (parsed.pathname === "/search") return "search";
+        return "other";
+    } catch (err) {
+        return "unknown";
+    }
+}
+
+function getReturnMetadata(fromURL, toURL) {
+    const fromPageType = getPageType(fromURL);
+    const toPageType = getPageType(toURL);
+    let returnType = "other";
+    if (fromPageType === "webpage" && toPageType === "serp") {
+        returnType = "resource-to-serp";
+    } else if (fromPageType === "serp" && toPageType === "serp") {
+        returnType = "serp-to-serp";
+    }
+
+    return { fromPageType, toPageType, returnType };
+}
+
+function getTargetPage(label, current, link = null) {
+    const href = link?.href || link?.getAttribute?.("href") || "";
+    if (href) {
+        try {
+            const targetPage = parseInt(new URL(href, window.location.origin).searchParams.get("page"), 10);
+            if (!isNaN(targetPage)) return targetPage;
+        } catch (err) {
+            // Fall back to label parsing below.
+        }
+    }
+
+    const normalizedLabel = label.toLowerCase();
+    if (normalizedLabel.includes("next") || normalizedLabel.includes("successiva") || label.includes("»")) return current + 1;
+    if (normalizedLabel.includes("previous") || normalizedLabel.includes("precedente") || label.includes("«")) return current - 1;
+
+    const num = parseInt(label, 10);
+    return isNaN(num) ? null : num;
 }
 
 function getResultRank(element) {
@@ -195,6 +339,8 @@ function getResultDetails(rank) {
     }
 
     const query = result.getAttribute("query") || "";
+    const rawQuery = result.dataset.rawQuery || query;
+    const sanitizedQuery = result.dataset.sanitizedQuery || query;
     const docid = result.getAttribute("base_ir") || "";
     const page = result.getAttribute("page") || "";
     const navigationUrl = link.href || link.getAttribute("href") || "";
@@ -202,6 +348,8 @@ function getResultDetails(rank) {
 
     return {
         query,
+        rawQuery,
+        sanitizedQuery,
         docid,
         rank: String(rank),
         page,
@@ -213,104 +361,184 @@ function getResultDetails(rank) {
     };
 }
 
-function logSERP() {
-    // when query returns no results
-    const no_results = document.getElementById("no-results");
-    if(no_results){
-        const query = no_results.getAttribute("query");
-        const page = "0";
-        const searchAppLocation = getSearchAppLocation(query, page);
-        if(studyLogger.checkHistory(searchAppLocation)){
-            studyLogger.logEvent("wentBack", {
-                "query": query,
-                "fromURL": studyLogger.checkHistory(searchAppLocation),
-                "toURL": searchAppLocation,
-            });
-            studyLogger.removeHistory();
-            studyLogger.addHistory(searchAppLocation);
-        }
-        else{
-            studyLogger.addHistory(searchAppLocation);
-            const didYouMean = document.getElementById("did-you-mean");
-            if(didYouMean){
-                studyLogger.logEvent("generatedDidYouMean", {
-                    "user query": query,
-                    "suggested query": didYouMean.textContent
-                });
-            }
-            studyLogger.logEvent("noResultsGenerated", {
-                query: query,
-                windowLocation: searchAppLocation,
-            });
-        }
+const RESULT_EXPOSURE_THRESHOLD = 0.5;
+const RESULT_EXPOSURE_MIN_MS = 250;
+const activeResultExposures = new Map();
+let resultExposureObserver = null;
+
+function exposureLogDetails(details) {
+    return {
+        query: details.query,
+        rawQuery: details.rawQuery,
+        sanitizedQuery: details.sanitizedQuery,
+        docid: details.docid,
+        rank: details.rank,
+        page: details.page,
+        url: details.url,
+        windowLocation: details.windowLocation,
+    };
+}
+
+function startResultExposure(result) {
+    const rank = result.id.split("-")[1];
+    if (activeResultExposures.has(rank)) return;
+
+    const details = getResultDetails(rank);
+    if (!details) return;
+
+    const record = {
+        rank,
+        details,
+        startedAt: Date.now(),
+        startLogged: false,
+        timer: null
+    };
+    record.timer = setTimeout(() => {
+        const activeRecord = activeResultExposures.get(rank);
+        if (!activeRecord || activeRecord.startLogged) return;
+        studyLogger.logEvent("resultExposureStarted", exposureLogDetails(activeRecord.details));
+        activeRecord.startLogged = true;
+    }, RESULT_EXPOSURE_MIN_MS);
+
+    activeResultExposures.set(rank, record);
+}
+
+function endResultExposure(rank, exitReason) {
+    const record = activeResultExposures.get(rank);
+    if (!record) return;
+
+    activeResultExposures.delete(rank);
+    if (record.timer) {
+        clearTimeout(record.timer);
     }
-    // when query returns results
-    else{
-        const searchResults = document.querySelectorAll("article.content-section");
-        if (!searchResults || searchResults.length === 0) return; // DOM not ready
 
-        const firstResult = document.querySelector("article.content-section");
-        const query = firstResult.getAttribute("query");
-        const page = firstResult.getAttribute("page");
-        const searchAppLocation = getSearchAppLocation(query, page);
+    const durationMs = Date.now() - record.startedAt;
+    if (durationMs < RESULT_EXPOSURE_MIN_MS) return;
 
-        if(studyLogger.checkHistory(searchAppLocation)){
-            studyLogger.logEvent("wentBack", {
-                "query": query,
-                "fromURL": studyLogger.checkHistory(searchAppLocation),
-                "toURL": searchAppLocation,
-            });
-            studyLogger.removeHistory();
-            studyLogger.addHistory(searchAppLocation);
-        }
-        else{
-            studyLogger.addHistory(searchAppLocation);
-            const didYouMean = document.getElementById("did-you-mean");
-            if(didYouMean){
-                studyLogger.logEvent("generatedDidYouMean", {
-                    "user query": query,
-                    "suggested query": didYouMean.textContent
-                });
+    if (!record.startLogged) {
+        studyLogger.logEvent("resultExposureStarted", exposureLogDetails(record.details));
+    }
+    studyLogger.logEvent("resultExposureEnded", {
+        ...exposureLogDetails(record.details),
+        durationMs,
+        exitReason
+    });
+}
+
+function flushActiveResultExposures(exitReason) {
+    Array.from(activeResultExposures.keys()).forEach(rank => {
+        endResultExposure(rank, exitReason);
+    });
+}
+
+function logResultExposure() {
+    if (!("IntersectionObserver" in window)) return;
+
+    const searchResults = document.querySelectorAll("article.content-section");
+    if (!searchResults || searchResults.length === 0) return;
+
+    resultExposureObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            const rank = entry.target.id.split("-")[1];
+            if (entry.isIntersecting && entry.intersectionRatio >= RESULT_EXPOSURE_THRESHOLD) {
+                startResultExposure(entry.target);
+            } else {
+                endResultExposure(rank, "viewport-exit");
             }
-            searchResults.forEach(result => {
-                const rank = result.id.split("-")[1];
-                const details = getResultDetails(rank);
-                if (!details) return;
-                
-                studyLogger.logEvent("searchResultGenerated", {
-                        query: details.query,
-                        docid: details.docid,
-                        title: details.title,
-                        snippet: details.snippet,
-                        rank: details.rank,
-                        page: details.page,
-                        url: details.url,
-                        windowLocation: details.windowLocation,
-                        // history: studyLogger.getHistory(),
-                    });
-            });
-        }
+        });
+    }, { threshold: [0, RESULT_EXPOSURE_THRESHOLD] });
 
-        // log interactions with Did you mean suggestions
+    searchResults.forEach(result => resultExposureObserver.observe(result));
+}
+
+function logNoResults() {
+    const noResults = document.querySelector("[data-log-no-results='true']");
+    if (!noResults || noResults.dataset.logged === "true") return;
+    noResults.dataset.logged = "true";
+    studyLogger.logEvent("searchNoResults", {
+        query: noResults.dataset.query || "",
+        rawQuery: noResults.dataset.rawQuery || noResults.dataset.query || "",
+        sanitizedQuery: noResults.dataset.sanitizedQuery || noResults.dataset.query || "",
+        page: noResults.dataset.page || ""
+    });
+}
+
+function logSERP() {
+    const searchResults = document.querySelectorAll("article.content-section");
+    if (!searchResults || searchResults.length === 0) return; // DOM not ready
+
+    const firstResult = document.querySelector("article.content-section");
+    const query = firstResult.getAttribute("query");
+    const page = firstResult.getAttribute("page");
+    const rawQuery = firstResult.dataset.rawQuery || query;
+    const sanitizedQuery = firstResult.dataset.sanitizedQuery || query;
+    const searchAppLocation = getSearchAppLocation(query, page);
+    const fromURL = studyLogger.checkHistory(searchAppLocation);
+
+    if(fromURL){
+        studyLogger.logEvent("wentBack", {
+            "query": query,
+            rawQuery,
+            sanitizedQuery,
+            "fromURL": fromURL,
+            "toURL": searchAppLocation,
+            ...getReturnMetadata(fromURL, searchAppLocation),
+        });
+        studyLogger.removeHistory();
+        studyLogger.addHistory(searchAppLocation);
+    }
+    else{
+        studyLogger.addHistory(searchAppLocation);
         const didYouMean = document.getElementById("did-you-mean");
         if(didYouMean){
-            didYouMean.addEventListener("mouseenter", (e) => {
-                studyLogger.logEvent("hoverOverDidYouMean", {
-                    "user query": query,
-                    "suggested query": didYouMean.textContent
-                });
+            studyLogger.logEvent("generatedDidYouMean", {
+                "user query": query,
+                rawQuery,
+                sanitizedQuery,
+                "suggested query": didYouMean.textContent
             });
-
-            didYouMean.addEventListener("click", (e) => {
-                studyLogger.logEvent("clickedDidYouMeanSuggestion", {
-                    "user query": query,
-                    "suggested query": didYouMean.textContent
+        }
+        searchResults.forEach(result => {
+            const rank = result.id.split("-")[1];
+            const details = getResultDetails(rank);
+            if (!details) return;
+            
+            studyLogger.logEvent("searchResultGenerated", {
+                    query: details.query,
+                    rawQuery: details.rawQuery,
+                    sanitizedQuery: details.sanitizedQuery,
+                    docid: details.docid,
+                    title: details.title,
+                    snippet: details.snippet,
+                    rank: details.rank,
+                    page: details.page,
+                    url: details.url,
+                    windowLocation: details.windowLocation,
+                    // history: studyLogger.getHistory(),
                 });
             });
         }
-    }
 
-    
+    const didYouMean = document.getElementById("did-you-mean");
+    if(didYouMean){
+        didYouMean.addEventListener("mouseenter", (e) => {
+            studyLogger.logEvent("hoverOverDidYouMean", {
+                "user query": query,
+                rawQuery,
+                sanitizedQuery,
+                "suggested query": didYouMean.textContent
+            });
+        });
+
+        didYouMean.addEventListener("click", (e) => {
+            studyLogger.logEvent("clickedDidYouMeanSuggestion", {
+                "user query": query,
+                rawQuery,
+                sanitizedQuery,
+                "suggested query": didYouMean.textContent
+            });
+        });
+    }
 }
 
 function logMouseHovers(){
@@ -324,6 +552,8 @@ function logMouseHovers(){
                 if (!details) return;
                 studyLogger.logEvent("cursorEnteredSnippet", {
                     query: details.query,
+                    rawQuery: details.rawQuery,
+                    sanitizedQuery: details.sanitizedQuery,
                     docid: details.docid,
                     rank: details.rank,
                     page: details.page,
@@ -338,6 +568,8 @@ function logMouseHovers(){
                 if (!details) return;
                 studyLogger.logEvent("cursorLeftSnippet", {
                     query: details.query,
+                    rawQuery: details.rawQuery,
+                    sanitizedQuery: details.sanitizedQuery,
                     docid: details.docid,
                     rank: details.rank,
                     page: details.page,
@@ -361,9 +593,12 @@ function logClicks(){
                 const details = getResultDetails(rank);
                 if (!details) return;
                 
+                flushActiveResultExposures("result-click");
                 studyLogger.addHistory(details.navigationUrl);
                 studyLogger.logEvent("clickedResult", {
                     query: details.query,
+                    rawQuery: details.rawQuery,
+                    sanitizedQuery: details.sanitizedQuery,
                     docid: details.docid,
                     rank: details.rank,
                     page: details.page,
@@ -382,23 +617,23 @@ function logPageNavigation(){
     if (pageLinks) {
         pageLinks.forEach(link => {
         link.addEventListener("click", (e) => {
+            flushActiveResultExposures("pagination");
             const clickedLabel = link.textContent.trim();
             const currentPage = parseInt(document.querySelector(".page-item.active a")?.textContent || "0", 10);
-            const nextPage = getTargetPage(clickedLabel, currentPage);
+            const nextPage = getTargetPage(clickedLabel, currentPage, link);
+            const context = getCurrentSearchContext();
             studyLogger.logEvent("pageNavigationClicked", {
-            clicked: clickedLabel,
-            fromPage: currentPage,
-            toPage: nextPage
+                query: context.query,
+                rawQuery: context.rawQuery,
+                sanitizedQuery: context.sanitizedQuery,
+                clicked: clickedLabel,
+                fromPage: currentPage,
+                toPage: nextPage,
+                targetURL: link.href || link.getAttribute("href") || ""
             });
         });
         });
 
-        function getTargetPage(label, current) {
-        if (label.includes("Next")) return current + 1;
-        if (label.includes("Previous")) return current - 1;
-        const num = parseInt(label, 10);
-        return isNaN(num) ? null : num;
-        }
     }
 }
 
@@ -417,11 +652,15 @@ function loggingSearchActions(isPageShow = false){
         logClicks();
         logMouseHovers();
         logPageNavigation();
+        logResultExposure();
         listenersAttached = true;
     }
 }
 
-document.addEventListener("DOMContentLoaded", () => loggingSearchActions(false));
+document.addEventListener("DOMContentLoaded", () => {
+    logNoResults();
+    loggingSearchActions(false);
+});
 
 window.addEventListener("pageshow", (e) => {
     if (e.persisted) {
@@ -432,6 +671,7 @@ window.addEventListener("pageshow", (e) => {
 
 // Fallback for browsers that don't use BFCache but still have back navigation issues
 window.addEventListener("pagehide", (e) => {
+    flushActiveResultExposures("pagehide");
     // Reset flag so listeners are re-attached if page is reloaded fresh
     if (!e.persisted) {
         listenersAttached = false;
@@ -457,6 +697,7 @@ const feedbackbtn = document.getElementById("feedback-btn")
 if (feedbackbtn) {
     feedbackbtn.addEventListener("click", () => {
         if (window.taskEndedLogged) return;
+        flushActiveResultExposures("task-end");
         const fb = document.getElementById("textarea_feedback")?.value || "";
         studyLogger.logEvent("TaskEnded", {
             answer: fb
@@ -464,6 +705,17 @@ if (feedbackbtn) {
         window.taskEndedLogged = true;
     });
 }
+
+window.flushActiveResultExposures = flushActiveResultExposures;
+window.__SOLLoggerInternals = {
+    getPageType,
+    getReturnMetadata,
+    getTargetPage: (label, current, href = "") => getTargetPage(
+        label,
+        current,
+        href ? { href, getAttribute: () => href } : null
+    ),
+};
 
 const endno = document.getElementById("no-end-btn")
 if (endno) {

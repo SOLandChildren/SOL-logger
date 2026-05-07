@@ -40,8 +40,8 @@
 
     <div id="feedbackModal" class="modal">
     <div class="modal-content-box">
-        <span class="close" onclick="closeFeedbackModal();openEndTaskModal()">&times;</span>
-        <h2>Inserisci la tua risposta qui sotto:</h2>
+        <span class="close" onclick="closeFeedbackModal()">&times;</span>
+        <h2>Hai completato la risposta?</h2>
 
             <div id="feedback">
                 <textarea id="textarea_feedback" name="feedbackText" cols="40" rows="5"></textarea>
@@ -49,7 +49,8 @@
             </div>
 
             <div class="modal-buttons">
-                <button id="feedback-btn" class="app-btn app-btn-primary">Invia la risposta</button>
+                <button id="feedback-btn" class="app-btn app-btn-primary">Invia risposta e termina</button>
+                <button id="continue-search-btn" class="app-btn app-btn-secondary">Continua a cercare</button>
             </div>
         </div>
     </div>
@@ -194,10 +195,15 @@
     </script>
 
     <script>
+        let isSubmitting = false;
         const finalbtn = document.getElementById("feedback-btn");
+        const continueBtn = document.getElementById("continue-search-btn");
+
         if (finalbtn) {
             finalbtn.addEventListener('click', async (e) => {
                 e.preventDefault();
+                if (isSubmitting) return;
+
                 const answerBox = document.getElementById("textarea_feedback");
                 const answerError = document.getElementById("answer-error-message");
                 if (!answerBox || !answerBox.value.trim()) {
@@ -213,8 +219,19 @@
                 if (answerError) {
                     answerError.hidden = true;
                 }
+
+                isSubmitting = true;
+                finalbtn.disabled = true;
+                if (continueBtn) continueBtn.disabled = true;
+
                 try {
                     if (window.studyLogger) {
+                        if (typeof window.flushActiveResultExposures === "function") {
+                            window.flushActiveResultExposures("task-end");
+                        }
+                        if (typeof window.logOpenWebpageClosed === "function") {
+                            window.logOpenWebpageClosed("end-task-button");
+                        }
                         if (!window.taskEndedLogged) {
                             studyLogger.logEvent("TaskEnded", {
                                 answer: answerBox.value
@@ -230,19 +247,49 @@
                     });
 
                     if (response.type === 'opaqueredirect' || response.status === 0 || (response.status >= 300 && response.status < 400)) {
+                        clearDraftAnswer();
                         clearClientData();
                         window.location.href = "{{ url_for('reward') }}";
-                    } else {
-                        console.error('Unexpected response:', await response.text());
+                        return;
                     }
+
+                    console.error('Unexpected response:', await response.text());
+                    isSubmitting = false;
+                    finalbtn.disabled = false;
+                    if (continueBtn) continueBtn.disabled = false;
                 } catch (err) {
                     console.error('Error ending task:', err);
+                    isSubmitting = false;
+                    finalbtn.disabled = false;
+                    if (continueBtn) continueBtn.disabled = false;
                 }
+            });
+        }
+
+        if (continueBtn) {
+            continueBtn.addEventListener('click', () => {
+                if (isSubmitting) return;
+                closeFeedbackModal();
             });
         }
     </script>
 
     <script>
+    function answerStorageKey() {
+        const sid = window.SESSION_ID || "unknown";
+        const tnum = window.TASK_NUMBER || "unknown";
+        return `answer_${sid}_${tnum}`;
+    }
+    function loadDraftAnswer() {
+        try { return sessionStorage.getItem(answerStorageKey()) || ""; } catch (_) { return ""; }
+    }
+    function saveDraftAnswer(value) {
+        try { sessionStorage.setItem(answerStorageKey(), value); } catch (_) {}
+    }
+    function clearDraftAnswer() {
+        try { sessionStorage.removeItem(answerStorageKey()); } catch (_) {}
+    }
+
     function openEndTaskModal() {
         document.getElementById("endTaskModal").style.display = "flex";
         if (window.studyLogger && !window.clickedEndTaskLogged) {
@@ -260,9 +307,22 @@
         }
         const answerBox = document.getElementById("textarea_feedback");
         if (answerBox) {
+            answerBox.value = loadDraftAnswer();
             setTimeout(() => answerBox.focus(), 0);
         }
     }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const answerBox = document.getElementById("textarea_feedback");
+        if (!answerBox) return;
+        const draft = loadDraftAnswer();
+        if (draft) {
+            answerBox.value = draft;
+        }
+        answerBox.addEventListener('input', (e) => {
+            saveDraftAnswer(e.target.value);
+        });
+    });
 
     function openAnswerModalDirect() {
         if (window.studyLogger && !window.clickedEndTaskLogged) {
@@ -408,7 +468,10 @@
     }
     </script>
 
-    <script>window.SESSION_ID = {{ session_id|tojson }};</script>
+    <script>
+        window.SESSION_ID = {{ session_id|tojson }};
+        window.TASK_NUMBER = {{ session.get('task_number')|tojson }};
+    </script>
     <script src="{{ url_for('static', filename='logger.js') }}"></script>
 </body>
 </html>

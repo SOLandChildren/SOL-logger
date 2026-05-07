@@ -30,11 +30,40 @@ document.addEventListener("DOMContentLoaded", () => {
     const viewedUrl = {{ url|tojson }};
     if (!window.studyLogger) return;
 
+    const webpageOpenedAt = Date.now();
+    let webpageClosedLogged = false;
     studyLogger.logEvent("webpageOpened", { url: viewedUrl });
 
-    document.getElementById("viewer-back-btn")?.addEventListener("click", function() {
-        studyLogger.logEvent("webpageClosed", { url: viewedUrl });
-    });
+    fetch("/iframe_check?url=" + encodeURIComponent(viewedUrl))
+        .then(r => r.json())
+        .then(d => {
+            if (!window.studyLogger) return;
+            const evt = d.blocked === true  ? "webpageLoadFailed"
+                      : d.blocked === false ? "webpageLoadSucceeded"
+                      :                        "webpageLoadCheckUnknown";
+            studyLogger.logEvent(evt, { url: viewedUrl, reason: d.reason || null });
+        })
+        .catch(() => {
+            if (!window.studyLogger) return;
+            studyLogger.logEvent("webpageLoadCheckUnknown",
+                                 { url: viewedUrl, reason: "fetch-error" });
+        });
+
+    function emitClosed(reason) {
+        if (!window.studyLogger || webpageClosedLogged) return;
+        webpageClosedLogged = true;
+        studyLogger.logEvent("webpageClosed", {
+            url: viewedUrl,
+            durationMs: Date.now() - webpageOpenedAt,
+            exitReason: reason
+        });
+    }
+
+    window.logOpenWebpageClosed = emitClosed;
+
+    document.getElementById("viewer-back-btn")
+        ?.addEventListener("click", () => emitClosed("back-button"));
+    window.addEventListener("pagehide", () => emitClosed("pagehide"));
 });
 </script>
 {% endblock %}
