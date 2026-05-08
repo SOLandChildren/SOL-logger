@@ -20,7 +20,7 @@
             aria-label="Cerca"
             autocomplete="off"
             list="query-suggestions">
-        <datalist id="query-suggestions"></datalist>
+        <ul id="query-suggestions" class="hidden" role="listbox"></ul>
         <button type="submit" name="submit-box" id="submit-box" class="app-btn app-btn-primary">Cerca</button>
       </form>
       <p class="search-error-message" {% if not search_error %}hidden{% endif %}>

@@ -754,13 +754,6 @@ window.addEventListener("pagehide", (e) => {
     }
 });
 
-const homeButton = document.getElementById("app-home");
-if (homeButton) {
-    homeButton.addEventListener("click", ()=>{
-        studyLogger.logEvent("wentBackHome");
-    });
-}
-
 
 const endyes = document.getElementById("yes-end-btn")
 if (endyes) {
@@ -830,6 +823,7 @@ if (serpLogoLink) {
         });
     });
 }
+
 
 const taskHelpBtn = document.getElementById("task-help-btn");
 const taskHelpModal = document.getElementById("task-help-modal");

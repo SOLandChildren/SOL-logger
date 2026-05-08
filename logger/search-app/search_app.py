@@ -548,57 +548,16 @@ def iframe_check():
 # Powers the search-bar autocomplete dropdown in layout.html.
 @app.route("/autocomplete")
 def autocomplete():
-    # query = request.args.get("query")
-
-    # if not query or len(query) < 3:
-    #     return jsonify([])
-
-    # try:
-    #     suggestions = search_backend.autocomplete(query)
-    #     print(f"Autocomplete suggestions for query {query}:", suggestions)
-    #     return jsonify(suggestions)
-    # except Exception:
-    #     return jsonify([]), 200
     query = request.args.get("query")
 
     if not query or len(query) < 3:
         return jsonify([])
 
-    # ---- Cache lookup ----
-    cached = AUTOCOMPLETE_CACHE.get(query)
-    if cached and time() - cached["time"] < CACHE_TTL:
-        return jsonify(cached["data"])
-
     try:
-        response = requests.get(
-            "https://serpapi.com/search.json",
-            params={
-                "engine": "google_autocomplete",
-                "q": query,
-                "api_key": API_KEY,
-                # uncomment for italian:
-                # "hl": "it",
-            },
-            timeout=5
-        )
-
-        response.raise_for_status()
-        data = response.json()
-
-        suggestions = [
-            s["value"] for s in data.get("suggestions", [])
-        ][:MAX_SUGGESTIONS]
-
-        # ---- Store in cache ----
-        AUTOCOMPLETE_CACHE[query] = {
-            "time": time(),
-            "data": suggestions
-        }
+        suggestions = search_backend.autocomplete(query)
         print(f"Autocomplete suggestions for query {query}:", suggestions)
         return jsonify(suggestions)
-
-    except requests.RequestException as e:
-        # graceful fallback (no retries)
+    except Exception:
         return jsonify([]), 200
 
 @app.route('/log_session', methods=['POST'])

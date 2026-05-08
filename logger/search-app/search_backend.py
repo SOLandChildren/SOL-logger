@@ -172,30 +172,33 @@ def vertex_search(query, page, rpp, config):
 
 
 def vertex_autocomplete(query, config, max_suggestions=5):
-    project, location, engine_id, data_store_id, language_code = config
+    # project, location, engine_id, data_store_id, language_code = config
 
-    if not project or not data_store_id:
-        return []
+    # if not project or not data_store_id:
+    #     print("project or data_store_id not found")
+    #     return []
 
-    client = get_completion_client(location)
+    # client = get_completion_client(location)
 
-    data_store_path = (
-        f"projects/{project}/locations/{location}"
-        f"/collections/default_collection/dataStores/{data_store_id}"
-    )
+    # data_store_path = (
+    #     f"projects/{project}/locations/{location}"
+    #     f"/collections/default_collection/dataStores/{data_store_id}"
+    # )
 
-    try:
-        request = discoveryengine.CompleteQueryRequest(
-            data_store=data_store_path,
-            query=query,
-            query_model="document-completable",
-            include_tail_suggestions=True,
-        )
-        response = client.complete_query(request)
-        return [s.suggestion for s in response.query_suggestions][:max_suggestions]
-    except Exception as e:
-        print(f"[Vertex Autocomplete ERROR] {e}")
-        return []
+    # try:
+    #     request = discoveryengine.CompleteQueryRequest(
+    #         data_store=data_store_path,
+    #         query=query,
+    #         query_model="document-completable",
+    #         include_tail_suggestions=True,
+    #     )
+    #     response = client.complete_query(request)
+    #     return [s.suggestion for s in response.query_suggestions][:max_suggestions]
+    # except Exception as e:
+    #     print(f"[Vertex Autocomplete ERROR] {e}")
+    #     return []
+    
+    return pyterrier_autocomplete(query)
 
 
 # ---------------------------------------------------------------------------
@@ -248,7 +251,7 @@ def pyterrier_autocomplete(query):
                 "q": query,
                 "api_key": API_KEY,
                 # uncomment for italian:
-                # "hl": "it",
+                "hl": "it",
             },
             timeout=5
         )
