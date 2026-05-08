@@ -81,7 +81,10 @@ def _sanitize_for_filename(value):
 def sanitize_query(query):
     # Removes all characters except letters, numbers, and spaces
     # This is necessary for PyTerrier compatibility
-    cleaned_query =  re.sub(r'[^\w\s]', '', query)
+    # cleaned_query =  re.sub(r'[^\w\s]', '', query)
+
+    # query cleaning not needed for Vertex AI
+    cleaned_query =  query
 
     words = spell.split_words(cleaned_query)
     misspelled = spell.unknown(words)

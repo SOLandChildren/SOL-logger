@@ -116,7 +116,7 @@ def vertex_search(query, page, rpp, config):
                 condition=discoveryengine.SearchRequest.QueryExpansionSpec.Condition.AUTO,
             ),
             spell_correction_spec=discoveryengine.SearchRequest.SpellCorrectionSpec(
-                mode=discoveryengine.SearchRequest.SpellCorrectionSpec.Mode.AUTO,
+                mode=discoveryengine.SearchRequest.SpellCorrectionSpec.Mode.SUGGESTION_ONLY,
             ),
             language_code=language_code,
         )
@@ -127,6 +127,9 @@ def vertex_search(query, page, rpp, config):
 
     results = []
     total = response.total_size if hasattr(response, "total_size") else 0
+
+    ## if there is a spelling correction, it willl be stores in response.corrected_query
+    # print(response.corrected_query)
 
     for item in response.results:
         doc_data = dict(item.document.derived_struct_data)
