@@ -14,7 +14,5 @@ Utente13
 Utente14
 Utente15
 Utente16
-Utente17
-Utente18
 UserTestLog1
 UserTestLog2

@@ -20,7 +20,7 @@
 
     <div id="endTaskModal" class="modal">
         <div class="modal-content-box">
-            <span class="close" onclick="closeEndTaskModal()">&times;</span>
+            <span class="close" onclick="window._endTaskCloseReason='x-close'; closeEndTaskModal()">&times;</span>
             <h2>Sei sicuro di voler terminare il compito?</h2>
             <p>Non potrai tornare indietro. Vuoi davvero terminare il compito adesso?</p>
 
@@ -31,16 +31,16 @@
 
         <div class="modal-buttons">
         <!-- <button id = "yes-end-btn" class="btn btn-primary" onclick="closeEndTaskModal();openFeedbackModal()">Yes, end task</button> -->
-        <button id = "yes-end-btn" class="app-btn app-btn-primary" onclick="closeEndTaskModal();openFeedbackModal()">Si, termina</button>
+        <button id = "yes-end-btn" class="app-btn app-btn-primary">Si, termina</button>
 
-        <button id = "no-end-btn" onclick="closeEndTaskModal()" class="app-btn app-btn-secondary">No, continua a cercare</button>
+        <button id = "no-end-btn" onclick="window._endTaskCloseReason='no-btn'; closeEndTaskModal(); openFeedbackModal()" class="app-btn app-btn-secondary">No, continua a cercare</button>
         </div>
         </div>
     </div>
 
     <div id="feedbackModal" class="modal">
     <div class="modal-content-box">
-        <span class="close" onclick="closeFeedbackModal()">&times;</span>
+        <span class="close" onclick="window._feedbackCloseReason='x-close'; closeFeedbackModal()">&times;</span>
         <h2>Hai completato la risposta?</h2>
 
             <div id="feedback">
@@ -198,9 +198,10 @@
         let isSubmitting = false;
         const finalbtn = document.getElementById("feedback-btn");
         const continueBtn = document.getElementById("continue-search-btn");
+        const yesEndBtn = document.getElementById("yes-end-btn");
 
         if (finalbtn) {
-            finalbtn.addEventListener('click', async (e) => {
+            finalbtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 if (isSubmitting) return;
 
@@ -220,12 +221,34 @@
                     answerError.hidden = true;
                 }
 
+                if (typeof saveDraftAnswer === 'function') {
+                    saveDraftAnswer(answerBox.value);
+                }
+
+                document.getElementById("feedbackModal").style.display = "none";
+                openEndTaskModal();
+            });
+        }
+
+        if (yesEndBtn) {
+            yesEndBtn.addEventListener('click', async () => {
+                if (isSubmitting) return;
                 isSubmitting = true;
-                finalbtn.disabled = true;
+                yesEndBtn.disabled = true;
+                if (finalbtn) finalbtn.disabled = true;
                 if (continueBtn) continueBtn.disabled = true;
+
+                window._endTaskCloseReason = 'confirmed';
+                document.getElementById("endTaskModal").style.display = "none";
+
+                await Promise.resolve();
+
+                const answerBox = document.getElementById("textarea_feedback");
+                const answer = answerBox ? answerBox.value : "";
 
                 try {
                     if (window.studyLogger) {
+                        window._feedbackCloseReason = 'submitted';
                         if (typeof window.flushActiveResultExposures === "function") {
                             window.flushActiveResultExposures("task-end");
                         }
@@ -233,9 +256,7 @@
                             window.logOpenWebpageClosed("end-task-button");
                         }
                         if (!window.taskEndedLogged) {
-                            studyLogger.logEvent("TaskEnded", {
-                                answer: answerBox.value
-                            });
+                            studyLogger.logEvent("TaskEnded", { answer });
                             window.taskEndedLogged = true;
                         }
                         await studyLogger.sendLogs();
@@ -255,12 +276,14 @@
 
                     console.error('Unexpected response:', await response.text());
                     isSubmitting = false;
-                    finalbtn.disabled = false;
+                    yesEndBtn.disabled = false;
+                    if (finalbtn) finalbtn.disabled = false;
                     if (continueBtn) continueBtn.disabled = false;
                 } catch (err) {
                     console.error('Error ending task:', err);
                     isSubmitting = false;
-                    finalbtn.disabled = false;
+                    yesEndBtn.disabled = false;
+                    if (finalbtn) finalbtn.disabled = false;
                     if (continueBtn) continueBtn.disabled = false;
                 }
             });
@@ -269,6 +292,7 @@
         if (continueBtn) {
             continueBtn.addEventListener('click', () => {
                 if (isSubmitting) return;
+                window._feedbackCloseReason = 'continue-search';
                 closeFeedbackModal();
             });
         }
@@ -290,6 +314,9 @@
         try { sessionStorage.removeItem(answerStorageKey()); } catch (_) {}
     }
 
+    window._endTaskCloseReason = null;
+    window._feedbackCloseReason = null;
+
     function openEndTaskModal() {
         document.getElementById("endTaskModal").style.display = "flex";
         if (window.studyLogger && !window.clickedEndTaskLogged) {
@@ -300,6 +327,9 @@
     }
 
     function openFeedbackModal() {
+        if (window.studyLogger) {
+            studyLogger.logEvent("AnswerBoxRevealed");
+        }
         document.getElementById("feedbackModal").style.display = "flex";
         const answerError = document.getElementById("answer-error-message");
         if (answerError) {
@@ -324,25 +354,25 @@
         });
     });
 
-    function openAnswerModalDirect() {
-        if (window.studyLogger && !window.clickedEndTaskLogged) {
-            studyLogger.logEvent("ClickedEndTask");
-            window.clickedEndTaskLogged = true;
-        }
-        const confirmButton = document.getElementById("yes-end-btn");
-        if (confirmButton) {
-            confirmButton.click();
-        } else {
-            openFeedbackModal();
-        }
-    }
-
     function closeEndTaskModal() {
         document.getElementById("endTaskModal").style.display = "none";
+        if (window._endTaskCloseReason === 'x-close' && window.studyLogger) {
+            studyLogger.logEvent("EndTaskDialogClosed", { reason: "x-close" });
+        }
+        // 'no-btn': existing logger.js listener emits TaskContinued; do not re-emit.
+        // 'confirmed': openFeedbackModal logs AnswerBoxRevealed on the next step.
+        window._endTaskCloseReason = null;
     }
 
     function closeFeedbackModal() {
         document.getElementById("feedbackModal").style.display = "none";
+        if (window._feedbackCloseReason === 'x-close' && window.studyLogger) {
+            studyLogger.logEvent("AnswerBoxClosed", { reason: "x-close" });
+        } else if (window._feedbackCloseReason === 'continue-search' && window.studyLogger) {
+            studyLogger.logEvent("AnswerBoxClosed", { reason: "continue-search" });
+        }
+        // 'submitted' or null: TaskEnded covers the end-of-task event.
+        window._feedbackCloseReason = null;
     }
 
     function toggleSavedTitles(event) {
@@ -464,13 +494,21 @@
 
     <script>
     function clearClientData() {
+        if (window.studyLogger && typeof window.studyLogger.clearClientData === 'function') {
+            window.studyLogger.clearClientData();
+            return;
+        }
         localStorage.clear();
+        try {
+            sessionStorage.clear();
+        } catch (_) {}
     }
     </script>
 
     <script>
         window.SESSION_ID = {{ session_id|tojson }};
         window.TASK_NUMBER = {{ session.get('task_number')|tojson }};
+        window.USER_ID = {{ session.get('user_id')|tojson }};
     </script>
     <script src="{{ url_for('static', filename='logger.js') }}"></script>
 </body>

@@ -12,8 +12,7 @@ Expected API_keys.json structure:
         "engine_id": "sol-test-2_1776796467056",
         "data_store_id": "datastore-sample_1776796569534",
         "language_code": "it"
-      },
-      "serp_api": { "api_key": "..." }
+      }
     }
 
 NOTE: data_store_id and engine_id are different values.

@@ -4,12 +4,17 @@
 
 <div class="reward-page">
     <div class="reward-unlock-panel">
-        <img src="{{ url_for('static', filename=unlocked_piece.static_filename) }}"
-             alt="Pezzo puzzle {{ unlocked_piece.task_num }}"
-             class="unlocked-piece-img">
+        <div class="reward-copy">
+            <h2>Avete sbloccato {% if is_last %}l'{{ unlocked_piece.label }}{% else %}il {{ unlocked_piece.label }}{% endif %} pezzo del puzzle!</h2>
+        </div>
 
-        <h2>Avete sbloccato {% if is_last %}l'{{ unlocked_piece.label }}{% else %}il {{ unlocked_piece.label }}{% endif %} pezzo del puzzle!</h2>
+        <div class="reward-media-stage">
+            <img src="{{ url_for('static', filename=unlocked_piece.static_filename) }}"
+                 alt="Pezzo puzzle {{ unlocked_piece.task_num }}"
+                 class="unlocked-piece-img">
+        </div>
 
+        <div class="reward-actions">
         {% if is_last %}
         <p>Continuate per vedere tutto il puzzle completo</p>
         <a href="{{ url_for('thank_you') }}" class="app-btn app-btn-primary reward-final-btn">
@@ -21,6 +26,7 @@
             Prossima domanda
         </a>
         {% endif %}
+        </div>
     </div>
 </div>
 

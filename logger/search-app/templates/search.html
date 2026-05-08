@@ -2,10 +2,10 @@
 {% block content %}
 <div class="app-page">
   <div class="app-toolbar">
-    <a href="{{ url_for('search_page') }}" class="app-btn app-btn-back">&larr; Indietro</a>
+    <a href="{{ url_for('search_page') }}" id="serp-back-btn" class="app-btn app-btn-back">&larr; Indietro</a>
     {% if search_results or allow_answer_without_results_for_testing %}
       <button type="button"
-              onclick="openAnswerModalDirect()"
+              onclick="openFeedbackModal()"
               class="app-btn app-btn-warm"
               id="end-task-btn">
         Scrivi la risposta
@@ -18,9 +18,11 @@
            data-sanitized-query="{{ query if query is defined else '' }}"
            data-page="{{ page if page is defined else '' }}">
     <div class="serp-search-wrap">
-      <div class="serp-search-title">
-        <span class="sol-red">C</span><span class="sol-green">e</span><span class="sol-blue">r</span><span class="sol-yellow">c</span><span class="sol-red">a</span>
-      </div>
+      <a href="{{ url_for('search_page') }}" id="serp-logo-link" style="text-decoration: none; color: inherit;">
+        <div class="serp-search-title">
+          <span class="sol-red">C</span><span class="sol-green">e</span><span class="sol-blue">r</span><span class="sol-yellow">c</span><span class="sol-red">a</span>
+        </div>
+      </a>
 
       <form method="POST" action="{{ url_for('result') }}" id="search-bar" class="home-search-form">
         {{ form.hidden_tag() }}
@@ -50,9 +52,9 @@
       <p>Non ci sono risultati per la vostra ricerca.<br>Provate a fare un'altra domanda!</p>
     </div>
     {% else %}
-      {% if query == serpapi_query %}
+      {% if query == corrected_query %}
       {% elif page==1 %}
-      <small class="container-info"><p>Forse cercavi: <a id="did-you-mean" href="{{ url_for('result', query=serpapi_query, page=1)|safe }}"><b>{{ serpapi_query|safe }}</b></a></p></small>
+      <small class="container-info"><p>Forse cercavi: <a id="did-you-mean" href="{{ url_for('result', query=corrected_query, page=1)|safe }}"><b>{{ corrected_query|safe }}</b></a></p></small>
       {% else %}
       {% endif %}
 
@@ -118,7 +120,32 @@
 </nav>
 {% endif %}
     {% endif %}
+
+    {% if reminder %}
+    <button type="button"
+            id="task-help-btn"
+            class="task-help-btn"
+            data-task-number="{{ session.get('task_position', 0) + 1 }}"
+            aria-label="Mostra domanda del task">?</button>
+    {% endif %}
   </section>
+
+  {% if reminder %}
+  <div id="task-help-modal" class="modal">
+    <div class="modal-content-box">
+      <span class="close" id="task-help-close-btn" aria-label="Chiudi">&times;</span>
+      <div class="task-help-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 18h6"/>
+          <path d="M10 22h4"/>
+          <path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1V18h6v-1.2c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z"/>
+        </svg>
+      </div>
+      <span class="task-help-label">La domanda a cui devi rispondere è la seguente:</span>
+      <p class="task-help-question">{{ reminder }}</p>
+    </div>
+  </div>
+  {% endif %}
 </div>
 
 {% endblock content %}

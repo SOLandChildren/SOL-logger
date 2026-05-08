@@ -60,6 +60,23 @@
             + `${padNumber(Math.floor(absoluteOffset / 60))}:${padNumber(absoluteOffset % 60)}`;
     }
 
+    function safeParseArray(rawValue) {
+        if (!rawValue) return [];
+        try {
+            const parsed = JSON.parse(rawValue);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (err) {
+            console.warn("Failed to parse stored logger data:", err);
+            return [];
+        }
+    }
+
+    function createClientSessionID() {
+        return (typeof crypto !== 'undefined' && crypto.randomUUID)
+            ? crypto.randomUUID()
+            : generateUUID();
+    }
+
     const logger = {
         sessionID: null,
         logs: [],
@@ -67,20 +84,59 @@
 
         init() {
             const serverID = (typeof window !== 'undefined' && window.SESSION_ID) ? window.SESSION_ID : '';
+            const storedSessionID = localStorage.getItem('sessionID');
+            const storedLogs = safeParseArray(localStorage.getItem('sessionLogs'));
+            const browserHistory = safeParseArray(localStorage.getItem('browserHistory'));
+            let logsToRestore = storedLogs;
+            let historyToRestore = browserHistory;
+
             if (serverID) {
                 this.sessionID = serverID;
+                if (storedSessionID && storedSessionID !== serverID) {
+                    const currentUser = window.USER_ID || null;
+                    logsToRestore = storedLogs.filter(entry => {
+                        return entry
+                            && entry.type === "idSubmitted"
+                            && entry.uid
+                            && entry.uid === currentUser;
+                    });
+                    historyToRestore = [];
+                }
+                logsToRestore = logsToRestore.map(entry => ({
+                    ...entry,
+                    sessionID: this.sessionID
+                }));
+                localStorage.setItem('sessionID', this.sessionID);
+                localStorage.setItem('sessionLogs', JSON.stringify(logsToRestore));
+                localStorage.setItem('browserHistory', JSON.stringify(historyToRestore));
             } else {
-                const uuid = (typeof crypto !== 'undefined' && crypto.randomUUID)
-                    ? crypto.randomUUID()
-                    : generateUUID();
-                this.sessionID = localStorage.getItem('sessionID') || uuid;
+                this.sessionID = storedSessionID || createClientSessionID();
                 localStorage.setItem('sessionID', this.sessionID);
             }
 
-            const storedLogs = localStorage.getItem('sessionLogs');
-            const browserHistory = localStorage.getItem('browserHistory');
-            this.logs = storedLogs ? JSON.parse(storedLogs) : [];
-            this.historyTracker = browserHistory ? JSON.parse(browserHistory) : [];
+            this.logs = logsToRestore;
+            this.historyTracker = historyToRestore;
+        },
+
+        clearClientData(options = {}) {
+            const preserveSessionID = options.preserveSessionID === true;
+            const createNewSessionID = options.createNewSessionID === true;
+            const nextSessionID = preserveSessionID
+                ? this.sessionID
+                : (createNewSessionID ? createClientSessionID() : null);
+
+            localStorage.clear();
+            if (typeof sessionStorage !== 'undefined') {
+                sessionStorage.clear();
+            }
+
+            this.logs = [];
+            this.historyTracker = [];
+            this.sessionID = nextSessionID;
+
+            if (nextSessionID) {
+                localStorage.setItem('sessionID', nextSessionID);
+            }
         },
         
         logEvent(type, details = {}) {
@@ -88,6 +144,7 @@
                 type,
                 timestamp: formatSwissTimestamp(),
                 sessionID: this.sessionID,
+                uid: window.USER_ID || null,
                 ...details
             };
             console.log("[LOG]", event);
@@ -150,7 +207,9 @@
 const idform = document.getElementById("enter-id-form");
 if (idform) {
   idform.addEventListener("submit", (e) => {
+    if (e.defaultPrevented) return;
     const uid = document.getElementById("id-box")?.value || "";
+    studyLogger.clearClientData({ createNewSessionID: true });
     studyLogger.logEvent("idSubmitted", { uid });
   });
 }
@@ -665,9 +724,26 @@ document.addEventListener("DOMContentLoaded", () => {
 window.addEventListener("pageshow", (e) => {
     if (e.persisted) {
         // Page restored from BFCache - re-run SERP logging for back detection
+        if (window.studyLogger) {
+            studyLogger.logEvent("browserBackDetected", {
+                url: window.location.href,
+                pathname: window.location.pathname
+            });
+        }
         loggingSearchActions(true);
     }
 });
+
+if (typeof performance !== 'undefined' && performance.getEntriesByType) {
+    const navEntry = performance.getEntriesByType("navigation")[0];
+    if (navEntry && navEntry.type === "back_forward" && window.studyLogger) {
+        studyLogger.logEvent("browserBackDetected", {
+            url: window.location.href,
+            pathname: window.location.pathname,
+            navigationType: "back_forward"
+        });
+    }
+}
 
 // Fallback for browsers that don't use BFCache but still have back navigation issues
 window.addEventListener("pagehide", (e) => {
@@ -722,4 +798,60 @@ if (endno) {
     endno.addEventListener("click", () => {
         studyLogger.logEvent("TaskContinued");
     });
+}
+
+const serpBackBtn = document.getElementById("serp-back-btn");
+if (serpBackBtn) {
+    serpBackBtn.addEventListener("click", () => {
+        studyLogger.logEvent("customBackClicked", {
+            fromPageType: "serp",
+            url: window.location.href
+        });
+    });
+}
+
+const viewerBackBtn = document.getElementById("viewer-back-btn");
+if (viewerBackBtn) {
+    viewerBackBtn.addEventListener("click", () => {
+        studyLogger.logEvent("customBackClicked", {
+            fromPageType: "webpage",
+            url: window.location.href
+        });
+    });
+}
+
+const serpLogoLink = document.getElementById("serp-logo-link");
+if (serpLogoLink) {
+    serpLogoLink.addEventListener("click", () => {
+        studyLogger.logEvent("logoClicked", {
+            fromURL: window.location.href,
+            toURL: serpLogoLink.href,
+            returnType: "logoToSearch"
+        });
+    });
+}
+
+const taskHelpBtn = document.getElementById("task-help-btn");
+const taskHelpModal = document.getElementById("task-help-modal");
+const taskHelpCloseBtn = document.getElementById("task-help-close-btn");
+
+if (taskHelpBtn && taskHelpModal) {
+    const taskHelpPayload = () => {
+        const payload = { fromURL: window.location.href };
+        const tn = taskHelpBtn.dataset.taskNumber;
+        if (tn) payload.task_number = tn;
+        return payload;
+    };
+
+    taskHelpBtn.addEventListener("click", () => {
+        taskHelpModal.style.display = "flex";
+        studyLogger.logEvent("taskQuestionHelpClicked", taskHelpPayload());
+    });
+
+    if (taskHelpCloseBtn) {
+        taskHelpCloseBtn.addEventListener("click", () => {
+            taskHelpModal.style.display = "none";
+            studyLogger.logEvent("taskQuestionHelpClosed", taskHelpPayload());
+        });
+    }
 }
