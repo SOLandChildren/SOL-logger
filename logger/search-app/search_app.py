@@ -8,6 +8,7 @@ import ipaddress
 import search_backend
 import uuid
 import random
+from time import time
 
 from urllib import response
 from flask import Flask, render_template, url_for, request, session, redirect, jsonify
@@ -62,6 +63,14 @@ SERP_QUERY_FIELD_EVENTS = {
 }
 
 spell = SpellChecker(language='it')
+
+with open("API_keys.json") as f:
+    API_KEY = json.load(f)["serp_api"]["api_key"]
+
+AUTOCOMPLETE_CACHE = {}
+CACHE_TTL = 600  # 10 minutes
+MAX_SUGGESTIONS = 5
+
 
 
 def _sanitize_for_filename(value):
@@ -539,15 +548,57 @@ def iframe_check():
 # Powers the search-bar autocomplete dropdown in layout.html.
 @app.route("/autocomplete")
 def autocomplete():
+    # query = request.args.get("query")
+
+    # if not query or len(query) < 3:
+    #     return jsonify([])
+
+    # try:
+    #     suggestions = search_backend.autocomplete(query)
+    #     print(f"Autocomplete suggestions for query {query}:", suggestions)
+    #     return jsonify(suggestions)
+    # except Exception:
+    #     return jsonify([]), 200
     query = request.args.get("query")
 
     if not query or len(query) < 3:
         return jsonify([])
 
+    # ---- Cache lookup ----
+    cached = AUTOCOMPLETE_CACHE.get(query)
+    if cached and time() - cached["time"] < CACHE_TTL:
+        return jsonify(cached["data"])
+
     try:
-        suggestions = search_backend.autocomplete(query)
+        response = requests.get(
+            "https://serpapi.com/search.json",
+            params={
+                "engine": "google_autocomplete",
+                "q": query,
+                "api_key": API_KEY,
+                # uncomment for italian:
+                # "hl": "it",
+            },
+            timeout=5
+        )
+
+        response.raise_for_status()
+        data = response.json()
+
+        suggestions = [
+            s["value"] for s in data.get("suggestions", [])
+        ][:MAX_SUGGESTIONS]
+
+        # ---- Store in cache ----
+        AUTOCOMPLETE_CACHE[query] = {
+            "time": time(),
+            "data": suggestions
+        }
+        print(f"Autocomplete suggestions for query {query}:", suggestions)
         return jsonify(suggestions)
-    except Exception:
+
+    except requests.RequestException as e:
+        # graceful fallback (no retries)
         return jsonify([]), 200
 
 @app.route('/log_session', methods=['POST'])
