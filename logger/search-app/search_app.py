@@ -8,6 +8,7 @@ import ipaddress
 import search_backend
 import uuid
 import random
+import traceback
 
 from urllib import response
 from flask import Flask, render_template, url_for, request, session, redirect, jsonify
@@ -557,7 +558,6 @@ def autocomplete():
         print(f"Autocomplete suggestions for query {query}:", suggestions)
         return jsonify(suggestions)
     except Exception as e:
-        import traceback
         traceback.print_exc()
         return jsonify([]), 200
 
