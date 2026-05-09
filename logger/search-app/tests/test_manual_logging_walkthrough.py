@@ -10,7 +10,8 @@ from pathlib import Path
 
 
 APP_ROOT = Path(__file__).resolve().parents[1]
-WALKTHROUGH = APP_ROOT / "tests" / "manual_logging_walkthrough.md"
+REPO_LOGGER_ROOT = APP_ROOT.parent
+WALKTHROUGH = REPO_LOGGER_ROOT / "docs" / "manual_logging_walkthrough.md"
 
 SOURCE_FILES = [
     APP_ROOT / "static" / "logger.js",
