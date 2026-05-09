@@ -556,7 +556,9 @@ def autocomplete():
         suggestions = search_backend.autocomplete(query)
         print(f"Autocomplete suggestions for query {query}:", suggestions)
         return jsonify(suggestions)
-    except Exception:
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify([]), 200
 
 @app.route('/log_session', methods=['POST'])
