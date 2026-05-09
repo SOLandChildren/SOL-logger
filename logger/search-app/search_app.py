@@ -16,6 +16,7 @@ from flask_session import Session
 from flask_cors import CORS
 from forms import SearchForm
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from urllib.parse import urlparse
 from spellchecker import SpellChecker
 
@@ -45,9 +46,11 @@ CORS(app, supports_credentials=True)
 rpp = 10  # results per page for pagination; may be changed later
 
 LOG_DIR = 'logs'
+LOG_TIME_ZONE = ZoneInfo("Europe/Zurich")
 os.makedirs(LOG_DIR, exist_ok=True)
 
 SERP_QUERY_FIELD_EVENTS = {
+    'querySubmitted',
     'searchResultGenerated',
     'clickedResult',
     'cursorEnteredSnippet',
@@ -160,7 +163,7 @@ def assign_random_task_order(user_id):
     return task_order
 
 def generate_log_id():
-    return f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{uuid.uuid4().hex[:8]}"
+    return f"{datetime.now(LOG_TIME_ZONE).strftime('%Y-%m-%d_%H-%M-%S')}_{uuid.uuid4().hex[:8]}"
 
 
 def advance_to_next_random_task():
@@ -343,6 +346,7 @@ def start_page():
         session['log_id'] = generate_log_id()
         session['pieces_earned'] = []
         session['tasks_started'] = []
+        session['reward_shown_logged'] = []
         session['last_active'] = datetime.now().isoformat()
         
         assign_random_task_order(user_id)
@@ -747,10 +751,40 @@ def reward():
     total_tasks = get_total_tasks(user_id)
     is_last = len(pieces) >= total_tasks
     display_task_number = session.get("task_position", 0) + 1
+    reward_log_key = f"{display_task_number}:{task_number}"
+    reward_shown_logged = session.get('reward_shown_logged', [])
     try:
         unlocked_piece = get_unlocked_piece(user_id, task_number, display_task_number)
     except PuzzleConfigError as err:
         return render_puzzle_config_error(str(err))
+
+    log_id = session.get('log_id')
+    if log_id and user_id and reward_log_key not in reward_shown_logged:
+        try:
+            safe_user = _sanitize_for_filename(user_id)
+            combined_path = os.path.join(LOG_DIR, f"{safe_user}_{log_id}_FULL.log")
+            task_path = os.path.join(LOG_DIR, f"{safe_user}_{log_id}_task{display_task_number}_topic{task_number}.log")
+            entry = {
+                "type": "rewardShown",
+                "uid": user_id,
+                "sessionID": session.get("session_id"),
+                "task_number": display_task_number,
+                "actual_topic_number": task_number,
+                "task_order": session.get("task_order", []),
+                "piecesEarned": pieces,
+                "totalTasks": total_tasks,
+                "isLast": is_last,
+                "timestamp": datetime.now(LOG_TIME_ZONE).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
+                "source": "server"
+            }
+            line = json.dumps(entry) + '\n'
+            for path in (combined_path, task_path):
+                with open(path, 'a', encoding='utf-8') as f:
+                    f.write(line)
+            reward_shown_logged.append(reward_log_key)
+            session['reward_shown_logged'] = reward_shown_logged
+        except Exception as exc:
+            app.logger.warning("Failed to write server-side rewardShown: %s", exc)
 
     return render_template('reward.html',
                            show_search=False,
@@ -794,4 +828,4 @@ def internal_error(e):
                            error_message="Something went wrong on our end. Please try again."), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=7001, threaded=True, debug=True)
+    app.run(host='0.0.0.0', port=7001, threaded=True, debug=False)
