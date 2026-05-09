@@ -820,4 +820,5 @@ def internal_error(e):
                            error_message="Something went wrong on our end. Please try again."), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=7001, threaded=True, debug=False)
+    debug = os.getenv("FLASK_DEBUG", "0") == "1"
+    app.run(host='0.0.0.0', port=7001, threaded=True, debug=debug)
