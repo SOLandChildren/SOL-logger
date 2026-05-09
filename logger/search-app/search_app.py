@@ -8,7 +8,6 @@ import ipaddress
 import search_backend
 import uuid
 import random
-from time import time
 
 from urllib import response
 from flask import Flask, render_template, url_for, request, session, redirect, jsonify
@@ -66,13 +65,6 @@ SERP_QUERY_FIELD_EVENTS = {
 }
 
 spell = SpellChecker(language='it')
-
-with open("API_keys.json") as f:
-    API_KEY = json.load(f)["serp_api"]["api_key"]
-
-AUTOCOMPLETE_CACHE = {}
-CACHE_TTL = 600  # 10 minutes
-MAX_SUGGESTIONS = 5
 
 
 
