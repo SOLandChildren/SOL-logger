@@ -40,7 +40,7 @@
 
     <div id="feedbackModal" class="modal">
     <div class="modal-content-box">
-        <span class="close" onclick="window._feedbackCloseReason='x-close'; closeFeedbackModal()">&times;</span>
+        <span class="close" onclick="window._feedbackCloseReason='x-button'; closeFeedbackModal()">&times;</span>
         <h2>Hai completato la risposta?</h2>
 
             <div id="feedback">
@@ -256,9 +256,15 @@
                             window.logOpenWebpageClosed("end-task-button");
                         }
                         if (!window.taskEndedLogged) {
+                            studyLogger.logEvent("ClickedEndTaskConfirmation");
                             studyLogger.logEvent("TaskEnded", { answer });
                             window.taskEndedLogged = true;
+                            window.taskEndLockout = true;
                         }
+                        const endTaskBtn = document.getElementById("end-task-btn");
+                        if (endTaskBtn) endTaskBtn.disabled = true;
+                        const noEndBtn = document.getElementById("no-end-btn");
+                        if (noEndBtn) noEndBtn.disabled = true;
                         await studyLogger.sendLogs();
                     }
 
@@ -318,17 +324,19 @@
     window._feedbackCloseReason = null;
 
     function openEndTaskModal() {
+        if (window.taskEndLockout) return;
         document.getElementById("endTaskModal").style.display = "flex";
         if (window.studyLogger && !window.clickedEndTaskLogged) {
-            studyLogger.logEvent("ClickedEndTask");
+            studyLogger.logEvent("ClickedOnSendAndTerminateTask");
             window.clickedEndTaskLogged = true;
         }
         // populateSavedDocuments();
     }
 
     function openFeedbackModal() {
+        if (window.taskEndLockout) return;
         if (window.studyLogger) {
-            studyLogger.logEvent("AnswerBoxRevealed");
+            studyLogger.logEvent("OpenedAnswerBox");
         }
         document.getElementById("feedbackModal").style.display = "flex";
         const answerError = document.getElementById("answer-error-message");
@@ -358,16 +366,18 @@
         document.getElementById("endTaskModal").style.display = "none";
         if (window._endTaskCloseReason === 'x-close' && window.studyLogger) {
             studyLogger.logEvent("EndTaskDialogClosed", { reason: "x-close" });
+            studyLogger.logEvent("EndTaskConfirmationClosed", { reason: "x-button" });
+            studyLogger.logEvent("TaskContinued");
         }
-        // 'no-btn': existing logger.js listener emits TaskContinued; do not re-emit.
-        // 'confirmed': openFeedbackModal logs AnswerBoxRevealed on the next step.
+        // 'no-btn': existing logger.js listener emits TaskContinued; do not re-emit here.
+        // 'confirmed': openFeedbackModal logs OpenedAnswerBox on the next step.
         window._endTaskCloseReason = null;
     }
 
     function closeFeedbackModal() {
         document.getElementById("feedbackModal").style.display = "none";
-        if (window._feedbackCloseReason === 'x-close' && window.studyLogger) {
-            studyLogger.logEvent("AnswerBoxClosed", { reason: "x-close" });
+        if (window._feedbackCloseReason === 'x-button' && window.studyLogger) {
+            studyLogger.logEvent("AnswerBoxClosed", { reason: "x-button" });
         } else if (window._feedbackCloseReason === 'continue-search' && window.studyLogger) {
             studyLogger.logEvent("AnswerBoxClosed", { reason: "continue-search" });
         }
@@ -511,5 +521,19 @@
         window.USER_ID = {{ session.get('user_id')|tojson }};
     </script>
     <script src="{{ url_for('static', filename='logger.js') }}"></script>
+    <script>
+    (function () {
+        history.pushState(null, "", location.href);
+        window.addEventListener("popstate", function () {
+            history.pushState(null, "", location.href);
+            if (window.studyLogger) {
+                studyLogger.logEvent("browserBackBlocked", {
+                    url: location.href,
+                    pathname: location.pathname
+                });
+            }
+        });
+    })();
+    </script>
 </body>
 </html>

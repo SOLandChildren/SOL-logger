@@ -29,13 +29,4 @@
         </div>
     </div>
 </div>
-
-<script>
-if (window.studyLogger) {
-    studyLogger.logEvent("rewardShown", {
-        piecesEarned: {{ pieces_earned|tojson }},
-        totalTasks: {{ total_tasks }}
-    });
-}
-</script>
 {% endblock %}

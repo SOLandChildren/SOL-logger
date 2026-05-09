@@ -3,7 +3,8 @@ import pyterrier as pt
 # from pyterrier_t5 import MonoT5ReRanker
 import pandas as pd
 from pathlib import Path
-pt.init()
+
+pt.java.init()
 
 import ir_datasets
 import json

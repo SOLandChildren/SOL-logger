@@ -41,23 +41,10 @@
     function formatSwissTimestamp(date = new Date()) {
         const parts = getZonedParts(date, LOG_TIME_ZONE);
         const milliseconds = date.getMilliseconds();
-        const zonedAsUTC = Date.UTC(
-            parts.year,
-            parts.month - 1,
-            parts.day,
-            parts.hour,
-            parts.minute,
-            parts.second,
-            milliseconds
-        );
-        const offsetMinutes = Math.round((zonedAsUTC - date.getTime()) / 60000);
-        const offsetSign = offsetMinutes >= 0 ? "+" : "-";
-        const absoluteOffset = Math.abs(offsetMinutes);
 
         return `${parts.year}-${padNumber(parts.month)}-${padNumber(parts.day)}`
             + `T${padNumber(parts.hour)}:${padNumber(parts.minute)}:${padNumber(parts.second)}`
-            + `.${padNumber(milliseconds, 3)}${offsetSign}`
-            + `${padNumber(Math.floor(absoluteOffset / 60))}:${padNumber(absoluteOffset % 60)}`;
+            + `.${padNumber(milliseconds, 3)}`;
     }
 
     function safeParseArray(rawValue) {
@@ -140,6 +127,14 @@
         },
         
         logEvent(type, details = {}) {
+            if (typeof window !== 'undefined'
+                && window.taskEndLockout
+                && type !== "ClickedEndTaskConfirmation"
+                && type !== "TaskEnded"
+                && type !== "browserBackBlocked"
+                && type !== "resourceViewEnded") {
+                return;
+            }
             const event = {
                 type,
                 timestamp: formatSwissTimestamp(),
@@ -298,7 +293,11 @@ if (searchbar) {
         logAutocompleteSelection(query, "submit");
         querySubmitInProgress = true;
         submittedQuery = query;
-        studyLogger.logEvent("querySubmitted", { query });
+        studyLogger.logEvent("querySubmitted", {
+            query,
+            rawQuery: query,
+            sanitizedQuery: query
+        });
     });
 
     window.addEventListener("pageshow", () => {
@@ -600,6 +599,7 @@ function logSERP() {
     }
 }
 
+// cursorEnteredSnippet / cursorLeftSnippet are desktop-only signals; iPad/touch will not fire mouseenter/mouseleave reliably.
 function logMouseHovers(){
     const searchSnippets = document.querySelectorAll("article.content-section");
     if(searchSnippets){
@@ -651,8 +651,9 @@ function logClicks(){
                 const rank = getResultRank(link);
                 const details = getResultDetails(rank);
                 if (!details) return;
-                
-                flushActiveResultExposures("result-click");
+
+                endResultExposure(rank, "result-click");
+                flushActiveResultExposures("linkWasVisibleInSerpResults");
                 studyLogger.addHistory(details.navigationUrl);
                 studyLogger.logEvent("clickedResult", {
                     query: details.query,
@@ -662,8 +663,8 @@ function logClicks(){
                     rank: details.rank,
                     page: details.page,
                     url: details.url,
-                    windowLocation: details.navigationUrl,
-                    // history: studyLogger.getHistory(),
+                    windowLocation: details.windowLocation,
+                    navigationUrl: details.navigationUrl,
                 });
 
             });
@@ -723,64 +724,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
 window.addEventListener("pageshow", (e) => {
     if (e.persisted) {
-        // Page restored from BFCache - re-run SERP logging for back detection
-        if (window.studyLogger) {
-            studyLogger.logEvent("browserBackDetected", {
-                url: window.location.href,
-                pathname: window.location.pathname
-            });
-        }
         loggingSearchActions(true);
     }
 });
 
-if (typeof performance !== 'undefined' && performance.getEntriesByType) {
-    const navEntry = performance.getEntriesByType("navigation")[0];
-    if (navEntry && navEntry.type === "back_forward" && window.studyLogger) {
-        studyLogger.logEvent("browserBackDetected", {
-            url: window.location.href,
-            pathname: window.location.pathname,
-            navigationType: "back_forward"
-        });
-    }
-}
-
-// Fallback for browsers that don't use BFCache but still have back navigation issues
 window.addEventListener("pagehide", (e) => {
     flushActiveResultExposures("pagehide");
-    // Reset flag so listeners are re-attached if page is reloaded fresh
     if (!e.persisted) {
         listenersAttached = false;
     }
 });
-
-const homeButton = document.getElementById("app-home");
-if (homeButton) {
-    homeButton.addEventListener("click", ()=>{
-        studyLogger.logEvent("wentBackHome");
-    });
-}
-
-
-const endyes = document.getElementById("yes-end-btn")
-if (endyes) {
-    endyes.addEventListener("click", () => {
-        studyLogger.logEvent("TaskEndConfirmed");
-    });
-}
-
-const feedbackbtn = document.getElementById("feedback-btn")
-if (feedbackbtn) {
-    feedbackbtn.addEventListener("click", () => {
-        if (window.taskEndedLogged) return;
-        flushActiveResultExposures("task-end");
-        const fb = document.getElementById("textarea_feedback")?.value || "";
-        studyLogger.logEvent("TaskEnded", {
-            answer: fb
-        });
-        window.taskEndedLogged = true;
-    });
-}
 
 window.flushActiveResultExposures = flushActiveResultExposures;
 window.__SOLLoggerInternals = {
@@ -803,7 +756,7 @@ if (endno) {
 const serpBackBtn = document.getElementById("serp-back-btn");
 if (serpBackBtn) {
     serpBackBtn.addEventListener("click", () => {
-        studyLogger.logEvent("customBackClicked", {
+        studyLogger.logEvent("customBackButtonClicked", {
             fromPageType: "serp",
             url: window.location.href
         });
@@ -813,7 +766,7 @@ if (serpBackBtn) {
 const viewerBackBtn = document.getElementById("viewer-back-btn");
 if (viewerBackBtn) {
     viewerBackBtn.addEventListener("click", () => {
-        studyLogger.logEvent("customBackClicked", {
+        studyLogger.logEvent("customBackButtonClicked", {
             fromPageType: "webpage",
             url: window.location.href
         });
@@ -823,7 +776,7 @@ if (viewerBackBtn) {
 const serpLogoLink = document.getElementById("serp-logo-link");
 if (serpLogoLink) {
     serpLogoLink.addEventListener("click", () => {
-        studyLogger.logEvent("logoClicked", {
+        studyLogger.logEvent("logoOnSerpClicked", {
             fromURL: window.location.href,
             toURL: serpLogoLink.href,
             returnType: "logoToSearch"
