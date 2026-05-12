@@ -14,3 +14,4 @@ __pycache__/
 .pytest_cache/
 experiments/testfile.ipynb
 logger/search-engine/test.ipynb
+*.env
