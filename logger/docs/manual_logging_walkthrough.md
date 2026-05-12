@@ -39,7 +39,7 @@ expected user flow.
 - `resultExposureEnded`: emitted when an active result exposure ends.
 - `clickedResult`: emitted when the user clicks a search result link.
 - `pageNavigationClicked`: emitted when the user clicks SERP pagination.
-- `wentBack`: emitted when logger history detects a return to a known SERP or resource state.
+- `wentBack`: emitted when app-level navigation returns to a known SERP or resource state.
 - `customBackButtonClicked`: emitted when the app-level back button is clicked.
 - `logoOnSerpClicked`: emitted when the SERP logo link is clicked.
 - `taskQuestionHelpClicked`: emitted when the task help modal is opened.
@@ -60,7 +60,7 @@ expected user flow.
 
 ### Browser back blocking
 
-- `browserBackBlocked`: emitted when native browser back navigation is intercepted and blocked.
+- `browserBackBlocked`: emitted when native browser back navigation is intercepted, blocked, or redirected back to the latest allowed app URL.
 
 ### Reward and completion
 
@@ -158,7 +158,9 @@ to trigger `resultExposureEnded`.
 Click a pagination control and confirm `pageNavigationClicked`. Use app-level
 navigation back to a previous result page or return from a resource page and
 confirm `wentBack` with the expected return metadata. Click the SERP back
-button and confirm `customBackButtonClicked`.
+button and confirm `customBackButtonClicked`. Press the browser Back button
+and confirm the current app page stays in place while `browserBackBlocked` is
+logged.
 
 ### 5. Exercise did-you-mean and no-result logging
 
@@ -173,7 +175,9 @@ Click a result title and confirm `clickedResult`, `webpageOpened`, and
 `resourceViewStarted`. Confirm exactly one of `webpageLoadSucceeded`,
 `webpageLoadFailed`, or `webpageLoadCheckUnknown`. Leave the resource view with
 the app-level back button or by ending the task, then confirm `webpageClosed`
-and `resourceViewEnded`.
+and `resourceViewEnded`. Pressing the native browser Back button from the
+resource view should keep the resource page open and log `browserBackBlocked`,
+not `wentBack`.
 
 ### 7. Exercise iframe navigation logging
 

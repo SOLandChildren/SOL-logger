@@ -561,19 +561,5 @@
         window.USER_ID = {{ session.get('user_id')|tojson }};
     </script>
     <script src="{{ url_for('static', filename='logger.js') }}"></script>
-    <script>
-    (function () {
-        history.pushState(null, "", location.href);
-        window.addEventListener("popstate", function () {
-            history.pushState(null, "", location.href);
-            if (window.studyLogger) {
-                studyLogger.logEvent("browserBackBlocked", {
-                    url: location.href,
-                    pathname: location.pathname
-                });
-            }
-        });
-    })();
-    </script>
 </body>
 </html>
