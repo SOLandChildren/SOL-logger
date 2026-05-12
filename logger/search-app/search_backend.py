@@ -11,7 +11,8 @@ Expected API_keys.json structure:
         "location": "global",
         "engine_id": "sol-test-2_1776796467056",
         "data_store_id": "datastore-sample_1776796569534",
-        "language_code": "it"
+        "language_code": "it",
+        "autocomplete_query_model": "search-history"
       }
     }
 
@@ -19,6 +20,8 @@ NOTE: data_store_id and engine_id are different values.
   - engine_id     -> required by SearchService (search)
   - data_store_id -> required by CompletionService (autocomplete)
 Both must be present in API_keys.json (or the env vars below).
+autocomplete_query_model is optional and defaults to search-history, which
+matches Vertex AI Search website data stores.
 The vertex Ai or search agent has to be set up on google console.
 """
 
@@ -28,6 +31,8 @@ import requests
 
 from google.cloud import discoveryengine_v1 as discoveryengine
 from google.api_core.client_options import ClientOptions
+
+DEFAULT_AUTOCOMPLETE_QUERY_MODEL = "search-history"
 
 
 # ---------------------------------------------------------------------------
@@ -40,22 +45,37 @@ def load_vertex_config():
     engine_id = os.getenv('VERTEX_ENGINE_ID')
     data_store_id = os.getenv('VERTEX_DATA_STORE_ID')
     language_code = os.getenv('VERTEX_LANGUAGE_CODE', 'it')
+    autocomplete_query_model = os.getenv('VERTEX_AUTOCOMPLETE_QUERY_MODEL')
 
-    if not project or not engine_id or not data_store_id:
-        config_path = os.path.join(os.path.dirname(__file__), 'API_keys.json')
-        if os.path.exists(config_path):
-            try:
-                with open(config_path) as f:
-                    cfg = json.load(f).get('vertex_ai', {})
-                project = project or cfg.get('project_number')
-                location = cfg.get('location', location)
-                engine_id = engine_id or cfg.get('engine_id')
-                data_store_id = data_store_id or cfg.get('data_store_id')
-                language_code = cfg.get('language_code', language_code)
-            except (OSError, ValueError) as e:
-                print(f"[Vertex Config WARN] Could not load API_keys.json: {e}")
+    config_path = os.path.join(os.path.dirname(__file__), 'API_keys.json')
+    if os.path.exists(config_path):
+        try:
+            with open(config_path) as f:
+                cfg = json.load(f).get('vertex_ai', {})
+            project = project or cfg.get('project_number')
+            location = cfg.get('location', location)
+            engine_id = engine_id or cfg.get('engine_id')
+            data_store_id = data_store_id or cfg.get('data_store_id')
+            language_code = cfg.get('language_code', language_code)
+            autocomplete_query_model = (
+                autocomplete_query_model
+                or cfg.get('autocomplete_query_model')
+            )
+        except (OSError, ValueError) as e:
+            print(f"[Vertex Config WARN] Could not load API_keys.json: {e}")
 
-    return project, location, engine_id, data_store_id, language_code
+    autocomplete_query_model = (
+        autocomplete_query_model or DEFAULT_AUTOCOMPLETE_QUERY_MODEL
+    )
+
+    return (
+        project,
+        location,
+        engine_id,
+        data_store_id,
+        language_code,
+        autocomplete_query_model,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +111,7 @@ VERTEX_MAX_RESULTS = 100
 
 
 def vertex_search(query, page, rpp, config):
-    project, location, engine_id, data_store_id, language_code = config
+    project, location, engine_id, _data_store_id, language_code = config[:5]
 
     if not project or not engine_id:
         print("[Vertex Search ERROR] Missing project_number or engine_id in config")
@@ -174,7 +194,10 @@ def vertex_search(query, page, rpp, config):
 
 
 def vertex_autocomplete(query, config, max_suggestions=5):
-    project, location, _engine_id, data_store_id, _language_code = config
+    project, location, _engine_id, data_store_id, _language_code = config[:5]
+    autocomplete_query_model = (
+        config[5] if len(config) > 5 else DEFAULT_AUTOCOMPLETE_QUERY_MODEL
+    )
 
     if not project or not data_store_id:
         print("[Vertex Autocomplete ERROR] Missing project_number or data_store_id in config")
@@ -191,7 +214,7 @@ def vertex_autocomplete(query, config, max_suggestions=5):
         request = discoveryengine.CompleteQueryRequest(
             data_store=data_store_path,
             query=query,
-            query_model="document",
+            query_model=autocomplete_query_model,
             include_tail_suggestions=True,
         )
         response = client.complete_query(request)
@@ -256,3 +279,13 @@ def autocomplete(query):
     if SEARCH_BACKEND == "vertex":
         return vertex_autocomplete(query, _vertex_config), "vertex"
     return pyterrier_autocomplete(query), "pyterrier"
+
+
+def autocomplete_query_model():
+    if SEARCH_BACKEND == "vertex":
+        return (
+            _vertex_config[5]
+            if len(_vertex_config) > 5
+            else DEFAULT_AUTOCOMPLETE_QUERY_MODEL
+        )
+    return None

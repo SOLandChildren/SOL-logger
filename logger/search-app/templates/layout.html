@@ -60,132 +60,178 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/js/bootstrap.min.js" integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM" crossorigin="anonymous"></script>
 
         <script>
-        const input = document.getElementById("search-box");
-        const list = document.getElementById("query-suggestions");
+        (() => {
+            const input = document.getElementById("search-box");
+            const list = document.getElementById("query-suggestions");
 
-        let debounceTimer;
-        let activeIndex = -1;
-        window.autoCompleteSuggestions = [];
+            let debounceTimer;
+            let activeIndex = -1;
+            let autocompleteRequestSequence = 0;
 
-        input.setAttribute("role", "combobox");
-        input.setAttribute("aria-autocomplete", "list");
-        input.setAttribute("aria-expanded", "false");
-        input.setAttribute("aria-controls", list.id);
-
-        input.addEventListener("input", () => {
-            const query = input.value.trim();
-            list.innerHTML = "";
-            activeIndex = -1;
-
-            if (query.length < 3) {
-                hideList();
-                return;
-            }
-
-            clearTimeout(debounceTimer);
-
-            debounceTimer = setTimeout(() => {
-                fetchSuggestions(query);
-            }, 300);
-        });
-
-        input.addEventListener("keydown", (e) => {
-            const items = list.querySelectorAll("li");
-            if (!items.length) return;
-
-            if (e.key === "ArrowDown") {
-                e.preventDefault();
-                activeIndex = (activeIndex + 1) % items.length;
-                updateActive(items);
-            }
-
-            if (e.key === "ArrowUp") {
-                e.preventDefault();
-                activeIndex =
-                    (activeIndex - 1 + items.length) % items.length;
-                updateActive(items);
-            }
-
-            if (e.key === "Enter" && activeIndex >= 0) {
-                e.preventDefault(); // don’t submit form yet
-                select(items[activeIndex].textContent);
-            }
-
-            if (e.key === "Escape") {
-                hideList();
-            }
-        });
-
-        async function fetchSuggestions(query) {
-            try {
-                const response = await fetch(
-                    `/autocomplete?query=${encodeURIComponent(query)}`
-                );
-
-                if (!response.ok) return;
-
-                const data = await response.json();
-                const suggestions = Array.isArray(data?.suggestions) ? data.suggestions : [];
-                const source = data?.source || "none";
+            function setAutocompleteContext(details = {}) {
+                const suggestions = Array.isArray(details.suggestions)
+                    ? details.suggestions
+                    : [];
                 window.autoCompleteSuggestions = suggestions;
+                window.autocompleteContext = {
+                    prefix: details.prefix || "",
+                    suggestions,
+                    source: details.source || "none",
+                    queryModel: details.queryModel || null,
+                    updatedAtMs: Date.now()
+                };
+            }
 
+            setAutocompleteContext();
+
+            if (!input || !list) return;
+
+            input.setAttribute("role", "combobox");
+            input.setAttribute("aria-autocomplete", "list");
+            input.setAttribute("aria-expanded", "false");
+            input.setAttribute("aria-controls", list.id);
+
+            input.addEventListener("input", () => {
+                const query = input.value.trim();
                 list.innerHTML = "";
+                activeIndex = -1;
 
-                suggestions.forEach(value => {
-                    const li = document.createElement("li");
-                    li.textContent = value;
-                    li.role = "option";
-                    li.setAttribute("aria-selected", "false");
-
-                    li.addEventListener("mousedown", () => {
-                        select(value);
-                    });
-
-                    list.appendChild(li);
-                });
-
-                if (window.studyLogger && suggestions.length > 0) {
-                    studyLogger.logEvent("autocompleteSuggestionsShown", {
-                        query: query,
-                        suggestions: suggestions,
-                        source: source
-                    });
+                if (query.length < 3) {
+                    autocompleteRequestSequence += 1;
+                    setAutocompleteContext({ prefix: query });
+                    hideList();
+                    return;
                 }
 
-                showList();
+                clearTimeout(debounceTimer);
 
-            } catch (err) {
-                console.error("Autocomplete error:", err);
+                const requestId = autocompleteRequestSequence + 1;
+                autocompleteRequestSequence = requestId;
+                debounceTimer = setTimeout(() => {
+                    fetchSuggestions(query, requestId);
+                }, 300);
+            });
+
+            input.addEventListener("keydown", (e) => {
+                const items = list.querySelectorAll("li");
+                if (!items.length) return;
+
+                if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    activeIndex = (activeIndex + 1) % items.length;
+                    updateActive(items);
+                }
+
+                if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    activeIndex =
+                        (activeIndex - 1 + items.length) % items.length;
+                    updateActive(items);
+                }
+
+                if (e.key === "Enter" && activeIndex >= 0) {
+                    e.preventDefault(); // don’t submit form yet
+                    select(items[activeIndex].textContent);
+                }
+
+                if (e.key === "Escape") {
+                    hideList();
+                }
+            });
+
+            async function fetchSuggestions(query, requestId) {
+                try {
+                    const response = await fetch(
+                        `/autocomplete?query=${encodeURIComponent(query)}`
+                    );
+
+                    if (requestId !== autocompleteRequestSequence) return;
+
+                    if (!response.ok) {
+                        setAutocompleteContext({ prefix: query });
+                        hideList();
+                        return;
+                    }
+
+                    const data = await response.json();
+                    const suggestions = Array.isArray(data?.suggestions) ? data.suggestions : [];
+                    const source = data?.source || "none";
+                    const queryModel = data?.query_model || data?.queryModel || null;
+                    setAutocompleteContext({
+                        prefix: query,
+                        suggestions,
+                        source,
+                        queryModel
+                    });
+
+                    list.innerHTML = "";
+
+                    if (suggestions.length === 0) {
+                        hideList();
+                        return;
+                    }
+
+                    suggestions.forEach(value => {
+                        const li = document.createElement("li");
+                        li.textContent = value;
+                        li.role = "option";
+                        li.setAttribute("aria-selected", "false");
+
+                        li.addEventListener("mousedown", () => {
+                            select(value);
+                        });
+
+                        list.appendChild(li);
+                    });
+
+                    if (window.studyLogger) {
+                        studyLogger.logEvent("autocompleteSuggestionsShown", {
+                            query: query,
+                            suggestions: suggestions,
+                            source: source,
+                            queryModel: queryModel
+                        });
+                    }
+
+                    showList();
+
+                } catch (err) {
+                    if (requestId === autocompleteRequestSequence) {
+                        setAutocompleteContext({ prefix: query });
+                        hideList();
+                    }
+                    console.error("Autocomplete error:", err);
+                }
             }
-        }
 
-        function updateActive(items) {
-            items.forEach((el, i) =>
-                el.setAttribute("aria-selected", i === activeIndex)
-            );
-        }
+            function updateActive(items) {
+                items.forEach((el, i) =>
+                    el.setAttribute("aria-selected", i === activeIndex)
+                );
+            }
 
-        function select(value) {
-            input.value = value;
-            hideList();
-        }
-
-        function showList() {
-            list.classList.remove("hidden");
-            input.setAttribute("aria-expanded", "true");
-        }
-
-        function hideList() {
-            list.classList.add("hidden");
-            input.setAttribute("aria-expanded", "false");
-        }
-
-        document.addEventListener("click", (e) => {
-            if (!e.target.closest("#query-suggestions") &&
-                e.target !== input) {
+            function select(value) {
+                input.value = value;
                 hideList();
             }
-        });
+
+            function showList() {
+                list.classList.remove("hidden");
+                input.setAttribute("aria-expanded", "true");
+            }
+
+            function hideList() {
+                list.classList.add("hidden");
+                input.setAttribute("aria-expanded", "false");
+            }
+
+            document.addEventListener("click", (e) => {
+                if (!e.target.closest("#query-suggestions") &&
+                    e.target !== input) {
+                    hideList();
+                }
+            });
+        })();
     </script>
 
     <script>
