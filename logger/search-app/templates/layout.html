@@ -124,7 +124,9 @@
 
                 if (!response.ok) return;
 
-                const suggestions = await response.json();
+                const data = await response.json();
+                const suggestions = Array.isArray(data?.suggestions) ? data.suggestions : [];
+                const source = data?.source || "none";
                 window.autoCompleteSuggestions = suggestions;
 
                 list.innerHTML = "";
@@ -141,6 +143,14 @@
 
                     list.appendChild(li);
                 });
+
+                if (window.studyLogger && suggestions.length > 0) {
+                    studyLogger.logEvent("autocompleteSuggestionsShown", {
+                        query: query,
+                        suggestions: suggestions,
+                        source: source
+                    });
+                }
 
                 showList();
 
