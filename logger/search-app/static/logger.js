@@ -225,6 +225,35 @@ function getAutocompleteSuggestions() {
         : [];
 }
 
+function getAutocompleteContext() {
+    const context = window.autocompleteContext || {};
+    const suggestions = Array.isArray(context.suggestions)
+        ? context.suggestions
+        : getAutocompleteSuggestions();
+
+    return {
+        autocompletePrefix: typeof context.prefix === "string" ? context.prefix : "",
+        autocompleteSuggestions: suggestions,
+        autocompleteSource: context.source || "none",
+        autocompleteQueryModel: context.queryModel || null
+    };
+}
+
+function getAutocompleteSelectedSuggestion(value) {
+    const selectedSuggestion = (value || "").trim();
+    if (!selectedSuggestion) return null;
+    return getAutocompleteSuggestions().includes(selectedSuggestion)
+        ? selectedSuggestion
+        : null;
+}
+
+function getAutocompleteLogContext(value = null) {
+    return {
+        ...getAutocompleteContext(),
+        autocompleteSelectedSuggestion: getAutocompleteSelectedSuggestion(value)
+    };
+}
+
 function logAutocompleteSelection(value, trigger) {
     const selectedSuggestion = (value || "").trim();
     if (!selectedSuggestion) return;
@@ -235,7 +264,8 @@ function logAutocompleteSelection(value, trigger) {
     studyLogger.logEvent("choseAutoCompleteSuggestion", {
         query: searchbox?.value || "",
         selectedSuggestion,
-        trigger
+        trigger,
+        ...getAutocompleteLogContext(selectedSuggestion)
     });
 }
 
@@ -296,7 +326,8 @@ if (searchbar) {
         studyLogger.logEvent("querySubmitted", {
             query,
             rawQuery: query,
-            sanitizedQuery: query
+            sanitizedQuery: query,
+            ...getAutocompleteLogContext(query)
         });
     });
 

@@ -18,6 +18,7 @@ logger/search-engine/datasets/argsme.zip
 logger/search-engine/datasets/CLEAR Corpus 6.01.xlsx
 
 # Local secrets
+*.env
 logger/search-app/service_account.json
 logger/search-engine/service_account.json
 logger/search-app/API_keys.json

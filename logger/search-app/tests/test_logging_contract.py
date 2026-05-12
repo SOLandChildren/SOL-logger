@@ -334,11 +334,22 @@ def test_result_exposure_logging_contract():
 
 def test_autocomplete_and_no_results_logging_contract():
     logger_source = LOGGER_JS.read_text(encoding="utf-8")
+    layout_source = LAYOUT_HTML.read_text(encoding="utf-8")
+    search_app_source = SEARCH_APP.read_text(encoding="utf-8")
     search_source = SEARCH_HTML.read_text(encoding="utf-8")
 
     assert 'studyLogger.logEvent("choseAutoCompleteSuggestion"' in logger_source
     assert 'searchbox.addEventListener("change"' in logger_source
     assert 'logAutocompleteSelection(query, "submit")' in logger_source
+    assert "getAutocompleteLogContext(query)" in logger_source
+    assert "getAutocompleteLogContext(selectedSuggestion)" in logger_source
+    assert "autocompleteSuggestions" in logger_source
+    assert "autocompleteSource" in logger_source
+    assert "autocompleteQueryModel" in logger_source
+    assert "autocompleteSelectedSuggestion" in logger_source
+    assert "window.autocompleteContext" in layout_source
+    assert "autocompleteRequestSequence" in layout_source
+    assert "query_model" in search_app_source
     assert 'studyLogger.logEvent("searchNoResults"' in logger_source
     assert "data-log-no-results=\"true\"" in search_source
 

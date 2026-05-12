@@ -551,15 +551,18 @@ def autocomplete():
     query = request.args.get("query")
 
     if not query or len(query) < 3:
-        return jsonify([])
+        return jsonify({"suggestions": [], "source": "none", "query_model": None})
 
     try:
-        suggestions = search_backend.autocomplete(query)
-        print(f"Autocomplete suggestions for query {query}:", suggestions)
-        return jsonify(suggestions)
-    except Exception as e:
+        suggestions, source = search_backend.autocomplete(query)
+        return jsonify({
+            "suggestions": suggestions,
+            "source": source,
+            "query_model": search_backend.autocomplete_query_model(),
+        })
+    except Exception:
         traceback.print_exc()
-        return jsonify([]), 200
+        return jsonify({"suggestions": [], "source": "none", "query_model": None}), 200
 
 @app.route('/log_session', methods=['POST'])
 def log_session():
