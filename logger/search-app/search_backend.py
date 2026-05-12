@@ -19,16 +19,15 @@ NOTE: data_store_id and engine_id are different values.
   - engine_id     -> required by SearchService (search)
   - data_store_id -> required by CompletionService (autocomplete)
 Both must be present in API_keys.json (or the env vars below).
+The vertex Ai or search agent has to be set up on google console.
 """
 
 import os
 import json
 import requests
-from flask import jsonify
 
 from google.cloud import discoveryengine_v1 as discoveryengine
 from google.api_core.client_options import ClientOptions
-from time import time
 
 
 # ---------------------------------------------------------------------------
@@ -175,33 +174,31 @@ def vertex_search(query, page, rpp, config):
 
 
 def vertex_autocomplete(query, config, max_suggestions=5):
-    # project, location, engine_id, data_store_id, language_code = config
+    project, location, _engine_id, data_store_id, _language_code = config
 
-    # if not project or not data_store_id:
-    #     print("project or data_store_id not found")
-    #     return []
+    if not project or not data_store_id:
+        print("[Vertex Autocomplete ERROR] Missing project_number or data_store_id in config")
+        return []
 
-    # client = get_completion_client(location)
+    client = get_completion_client(location)
 
-    # data_store_path = (
-    #     f"projects/{project}/locations/{location}"
-    #     f"/collections/default_collection/dataStores/{data_store_id}"
-    # )
+    data_store_path = (
+        f"projects/{project}/locations/{location}"
+        f"/collections/default_collection/dataStores/{data_store_id}"
+    )
 
-    # try:
-    #     request = discoveryengine.CompleteQueryRequest(
-    #         data_store=data_store_path,
-    #         query=query,
-    #         query_model="document-completable",
-    #         include_tail_suggestions=True,
-    #     )
-    #     response = client.complete_query(request)
-    #     return [s.suggestion for s in response.query_suggestions][:max_suggestions]
-    # except Exception as e:
-    #     print(f"[Vertex Autocomplete ERROR] {e}")
-    #     return []
-    
-    return pyterrier_autocomplete(query)
+    try:
+        request = discoveryengine.CompleteQueryRequest(
+            data_store=data_store_path,
+            query=query,
+            query_model="document",
+            include_tail_suggestions=True,
+        )
+        response = client.complete_query(request)
+        return [s.suggestion for s in response.query_suggestions][:max_suggestions]
+    except Exception as e:
+        print(f"[Vertex Autocomplete ERROR] {e}")
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -234,51 +231,11 @@ def pyterrier_search(query, page, rpp, db_url="http://search_engine:7002"):
 
 
 def pyterrier_autocomplete(query):
-
-    with open("API_keys.json") as f:
-        API_KEY = json.load(f)["serp_api"]["api_key"]
-
-    AUTOCOMPLETE_CACHE = {}
-    CACHE_TTL = 600  # 10 minutes
-    MAX_SUGGESTIONS = 5
-
-    cached = AUTOCOMPLETE_CACHE.get(query)
-    if cached and time() - cached["time"] < CACHE_TTL:
-        return jsonify(cached["data"])
-
-    try:
-        response = requests.get(
-            "https://serpapi.com/search.json",
-            params={
-                "engine": "google_autocomplete",
-                "q": query,
-                "api_key": API_KEY,
-                # uncomment for italian:
-                "hl": "it",
-            },
-            timeout=5
-        )
-
-        response.raise_for_status()
-        data = response.json()
-
-        suggestions = [
-            s["value"] for s in data.get("suggestions", [])
-        ][:MAX_SUGGESTIONS]
-
-        # ---- Store in cache ----
-        AUTOCOMPLETE_CACHE[query] = {
-            "time": time(),
-            "data": suggestions
-        }
-
-        return suggestions
-
-        # return jsonify(suggestions)
-
-    except requests.RequestException as e:
-        # graceful fallback (no retries)
-        return e
+    """Stub. When SEARCH_BACKEND=pyterrier, autocomplete is disabled. To enable,
+    replace this function with a loader that prefix-matches against a curated
+    suggestions file (e.g. data/autocomplete_suggestions.json) or against the
+    PyTerrier lexicon."""
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -297,5 +254,5 @@ def search(query, page, rpp):
 
 def autocomplete(query):
     if SEARCH_BACKEND == "vertex":
-        return vertex_autocomplete(query, _vertex_config)
-    return pyterrier_autocomplete(query)
+        return vertex_autocomplete(query, _vertex_config), "vertex"
+    return pyterrier_autocomplete(query), "pyterrier"
