@@ -18,4 +18,4 @@ COPY . .
 
 EXPOSE 7001
 
-CMD ["python", "search_app.py"]
+CMD ["gunicorn", "-w", "2", "--threads", "4", "-b", "0.0.0.0:7001", "search_app:app"]

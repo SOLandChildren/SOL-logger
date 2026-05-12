@@ -1,0 +1,85 @@
+name: Deploy to USI (currently inactive)
+
+# IMPORTANT - this workflow is currently INACTIVE.
+# solar.usilu.net is on USI's internal network (10.x.x.x) and is unreachable
+# from GitHub-hosted runners. Use scripts/deploy.sh from your laptop while on
+# USI VPN for now.
+#
+# To re-activate this workflow you'd need EITHER:
+#   (a) a self-hosted GitHub Actions runner registered from inside USI's
+#       network (e.g. running on solar.usilu.net itself), and change
+#       `runs-on:` below to that runner's label; OR
+#   (b) USI to provide a publicly-reachable jump host / bastion.
+#
+# Until then we keep this file for reference. The push trigger is disabled so
+# it doesn't fire and fail on every commit. workflow_dispatch is kept so you
+# can manually run it once a self-hosted runner exists.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-usi
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Verify required secrets are set
+        env:
+          API_KEYS_JSON:        ${{ secrets.API_KEYS_JSON }}
+          SERVICE_ACCOUNT_JSON: ${{ secrets.SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -z "$API_KEYS_JSON" ]; then
+            echo "::error::API_KEYS_JSON secret is empty or unset"; exit 1
+          fi
+          if [ -z "$SERVICE_ACCOUNT_JSON" ]; then
+            echo "::error::SERVICE_ACCOUNT_JSON secret is empty or unset"; exit 1
+          fi
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: Materialise secrets into the checkout
+        env:
+          API_KEYS_JSON:        ${{ secrets.API_KEYS_JSON }}
+          SERVICE_ACCOUNT_JSON: ${{ secrets.SERVICE_ACCOUNT_JSON }}
+        run: |
+          printf '%s' "$API_KEYS_JSON"        > logger/search-app/API_keys.json
+          printf '%s' "$SERVICE_ACCOUNT_JSON" > logger/search-app/service_account.json
+          chmod 600 logger/search-app/API_keys.json logger/search-app/service_account.json
+
+      - name: Rsync repo to server (~/sol-logger/)
+        env:
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+        run: |
+          rsync -az --delete-after \
+            -e "ssh -p $SSH_PORT -i $HOME/.ssh/id_ed25519" \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='__pycache__/' \
+            --exclude='*.pyc' \
+            --exclude='logger/logs/' \
+            --exclude='logger/old_logs/' \
+            --exclude='logger/search-engine/datasets/' \
+            --exclude='logger/search-engine/index/' \
+            ./ "$SSH_USER@$SSH_HOST:sol-logger/"
+
+      - name: Build and restart containers (vertex-only profile)
+        env:
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+        run: |
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+            'cd "$HOME/sol-logger/logger" && mkdir -p logs && docker compose up --build -d --remove-orphans && docker compose ps'
