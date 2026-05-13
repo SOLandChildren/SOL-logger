@@ -25,7 +25,7 @@ app = Flask(__name__)
 # -------------------------------------------------
 # 1. Core app + session configuration FIRST
 # -------------------------------------------------
-app.config["SECRET_KEY"] = "OtulwLo7gQ"
+app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY") or "OtulwLo7gQ"
 
 app.config.update(
     SESSION_COOKIE_SECURE=False,      # True in production with HTTPS

@@ -1,73 +1,69 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Manual deploy of SOL-logger to solar.usilu.net.
+# Manual Git-based deploy of SOL-logger to solar.usilu.net.
 #
 # Prerequisites:
-#   - You are connected to USI VPN (solar.usilu.net is on USI's internal network)
-#   - rsync and ssh installed (default on macOS)
-#   - logger/search-app/API_keys.json and service_account.json exist locally
+#   - You are connected to USI VPN or on the USI network.
+#   - The server has the repo cloned at ~/SOL-logger.
+#   - The server has Docker + Docker Compose installed.
+#   - The server has these gitignored files:
+#       ~/SOL-logger/logger/search-app/API_keys.json
+#       ~/SOL-logger/logger/search-app/service_account.json
 #
-# Usage:  scripts/deploy.sh
+# Usage:
+#   scripts/deploy.sh                 # deploy main
+#   scripts/deploy.sh deployment-test # temporary branch deploy
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SERVER_USER="rotam" 
-SERVER_HOST="solar.usilu.net"
-REMOTE_DIR="sol-logger"   # path is relative to $HOME on the server
-
-cd "$REPO_ROOT"
+SERVER_USER="${SERVER_USER:-rotam}"
+SERVER_HOST="${SERVER_HOST:-solar.usilu.net}"
+SERVER_REPO="${SERVER_REPO:-SOL-logger}"
+DEPLOY_BRANCH="${1:-${DEPLOY_BRANCH:-main}}"
 
 echo "==> Pre-flight checks"
 
+if ! nc -z -G 3 "$SERVER_HOST" 22 >/dev/null 2>&1; then
+    echo "    ERROR: $SERVER_HOST:22 is not reachable from here." >&2
+    echo "    Are you connected to USI VPN or on the USI network?" >&2
+    exit 1
+fi
+echo "    $SERVER_HOST:22 reachable"
+
+echo ""
+echo "==> Deploying origin/$DEPLOY_BRANCH on $SERVER_USER@$SERVER_HOST:~/$SERVER_REPO"
+
+ssh "$SERVER_USER@$SERVER_HOST" "DEPLOY_BRANCH='$DEPLOY_BRANCH' SERVER_REPO='$SERVER_REPO' bash -s" <<'REMOTE'
+set -euo pipefail
+
+cd "$HOME/$SERVER_REPO"
+
+echo "==> Updating git checkout"
+git fetch origin
+git checkout "$DEPLOY_BRANCH"
+git pull --ff-only origin "$DEPLOY_BRANCH"
+
+echo "==> Checking server-side secrets"
 for f in logger/search-app/API_keys.json logger/search-app/service_account.json; do
-    if [ ! -s "$REPO_ROOT/$f" ]; then
-        echo "    ERROR: missing or empty file: $f" >&2
-        echo "    Place it locally (it's gitignored) before deploying." >&2
+    if [ ! -s "$f" ]; then
+        echo "ERROR: missing or empty file on server: $HOME/$SERVER_REPO/$f" >&2
         exit 1
     fi
 done
-echo "    secrets present"
 
-if ! nc -z -G 3 "$SERVER_HOST" 22 >/dev/null 2>&1; then
-    echo "    ERROR: $SERVER_HOST:22 is not reachable from here." >&2
-    echo "    Are you on USI VPN? Look for a utun/tun interface with a 10.x address:" >&2
-    echo "      ifconfig | awk '/^utun|^tun/ {i=\$1} /inet / && i {print i, \$2; i=\"\"}'" >&2
-    exit 1
-fi
-echo "    $SERVER_HOST:22 reachable (VPN looks fine)"
+chmod 600 logger/search-app/API_keys.json logger/search-app/service_account.json
+mkdir -p logger/logs
 
-echo ""
-echo "==> Rsync to $SERVER_USER@$SERVER_HOST:$REMOTE_DIR/"
-
-rsync -az --delete-after \
-    --exclude='.git/' \
-    --exclude='.github/' \
-    --exclude='__pycache__/' \
-    --exclude='*.pyc' \
-    --exclude='logger/logs/' \
-    --exclude='logger/old_logs/' \
-    --exclude='logger/search-engine/datasets/' \
-    --exclude='logger/search-engine/index/' \
-    --exclude='scripts/' \
-    --exclude='DEPLOY-TODO.txt' \
-    --exclude='README.md' \
-    --exclude='experiments/' \
-    ./ "$SERVER_USER@$SERVER_HOST:$REMOTE_DIR/"
-
-echo ""
-echo "==> Build + restart on server (Vertex-only profile)"
-
-ssh "$SERVER_USER@$SERVER_HOST" \
-    'cd "$HOME/sol-logger/logger" && mkdir -p logs && docker compose up --build -d --remove-orphans && docker compose ps'
+echo "==> Building and restarting containers"
+cd logger
+docker compose up --build -d --remove-orphans
+docker compose ps
+REMOTE
 
 echo ""
 echo "==> Deploy complete."
 echo ""
-echo "Smoke-test from server:"
-echo "    ssh $SERVER_USER@$SERVER_HOST 'curl -I http://127.0.0.1:7001/'"
-echo ""
-echo "Smoke-test from your laptop (VPN must be on):"
-echo "    curl -I http://solar.usilu.net:7001/"
+echo "Smoke-test from your laptop while on VPN:"
+echo "    curl -I http://solar.usilu.net:7001/welcome"
 echo ""
 echo "Tail live logs:"
-echo "    ssh $SERVER_USER@$SERVER_HOST 'cd sol-logger/logger && docker compose logs -f search_app'"
+echo "    ssh $SERVER_USER@$SERVER_HOST 'cd ~/$SERVER_REPO/logger && docker compose logs -f search_app'"
