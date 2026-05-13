@@ -48,6 +48,7 @@ REQUIRED_FIELDS = {
     "iframeNavigation": ("fromUrl", "toUrl", "windowLocation"),
     "iframeBackNavigation": ("fromUrl", "toUrl", "windowLocation"),
     "iframeNavigationTrackingLimited": ("reason", "url", "windowLocation"),
+    "browserBackBlocked": ("url", "pathname"),
 }
 
 PILOT_CHECKLIST = """
@@ -56,6 +57,7 @@ Manual pilot checklist:
 - Paginate forward/back, confirm pageNavigationClicked.toPage is numeric and targetURL is present.
 - Click a resource and return, confirm wentBack.returnType is resource-to-serp.
 - Paginate between SERPs, confirm wentBack.returnType is serp-to-serp.
+- Press native browser Back, confirm browserBackBlocked appears and the current page stays in place.
 - End from a resource page, confirm webpageClosed appears before TaskEnded.
 - Scroll the SERP, confirm resultExposureStarted/resultExposureEnded are paired and durations are plausible.
 - Try a no-result query, confirm searchNoResults has query/rawQuery/sanitizedQuery.

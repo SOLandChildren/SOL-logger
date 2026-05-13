@@ -8,6 +8,7 @@ import ipaddress
 import search_backend
 import uuid
 import random
+import traceback
 
 from urllib import response
 from flask import Flask, render_template, url_for, request, session, redirect, jsonify
@@ -550,14 +551,18 @@ def autocomplete():
     query = request.args.get("query")
 
     if not query or len(query) < 3:
-        return jsonify([])
+        return jsonify({"suggestions": [], "source": "none", "query_model": None})
 
     try:
-        suggestions = search_backend.autocomplete(query)
-        print(f"Autocomplete suggestions for query {query}:", suggestions)
-        return jsonify(suggestions)
+        suggestions, source = search_backend.autocomplete(query)
+        return jsonify({
+            "suggestions": suggestions,
+            "source": source,
+            "query_model": search_backend.autocomplete_query_model(),
+        })
     except Exception:
-        return jsonify([]), 200
+        traceback.print_exc()
+        return jsonify({"suggestions": [], "source": "none", "query_model": None}), 200
 
 @app.route('/log_session', methods=['POST'])
 def log_session():
