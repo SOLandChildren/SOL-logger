@@ -48,6 +48,7 @@ rpp = 10  # results per page for pagination; may be changed later
 LOG_DIR = 'logs'
 LOG_TIME_ZONE = ZoneInfo("Europe/Zurich")
 os.makedirs(LOG_DIR, exist_ok=True)
+LOG_REGISTRY_PATH = os.path.join(LOG_DIR, 'log_registry.jsonl')
 
 SERP_QUERY_FIELD_EVENTS = {
     'querySubmitted',
@@ -564,27 +565,56 @@ def autocomplete():
         traceback.print_exc()
         return jsonify({"suggestions": [], "source": "none", "query_model": None}), 200
 
+def _append_log_registry(*, user_id, session_id, task_number, num_events,
+                         saved_log_filename, status, error=None):
+    """Append one summary line to logs/log_registry.jsonl. Never raises."""
+    try:
+        entry = {
+            "timestamp": datetime.now(LOG_TIME_ZONE).isoformat(timespec='milliseconds'),
+            "user_id": user_id,
+            "session_id": session_id,
+            "task_number": task_number,
+            "num_events": num_events,
+            "saved_log_filename": saved_log_filename,
+            "status": status,
+            "error": error,
+        }
+        with open(LOG_REGISTRY_PATH, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(entry) + '\n')
+    except Exception:
+        traceback.print_exc()
+
+
 @app.route('/log_session', methods=['POST'])
 def log_session():
-    print("Received /log_session request")
     data = request.get_json(force=False, silent=True) or {}
-    print(f"Request JSON data: {data}")
 
     session_id = data.get('session_id')
     logs = data.get('logs')
-    
+    num_events = len(logs) if isinstance(logs, list) else 0
+
     user_id = session.get('user_id')
     task_number = session.get('task_number')
     server_session_id = session.get('session_id')
-    print(f"user_id: {user_id}, task_number: {task_number}, session_id: {session_id}")
+
     if not (user_id and task_number and session_id and isinstance(logs, list) and logs):
-        print("Missing required data: user_id, task_number, session_id or logs")
+        print(f"[log] ERROR missing-data user={user_id} session={session_id} task={task_number}")
+        _append_log_registry(
+            user_id=user_id, session_id=session_id, task_number=task_number,
+            num_events=num_events, saved_log_filename=None,
+            status="error", error="missing-data",
+        )
         return jsonify({"error": "Missing user_id, task_number, session_id or logs"}), 400
 
     if session_id != server_session_id:
         print(
-            "[Logging REJECT] client/server session mismatch: "
-            f"client={session_id}, server={server_session_id}, user_id={user_id}"
+            f"[log] REJECT session-mismatch user={user_id} "
+            f"client={session_id} server={server_session_id}"
+        )
+        _append_log_registry(
+            user_id=user_id, session_id=session_id, task_number=task_number,
+            num_events=num_events, saved_log_filename=None,
+            status="error", error="session-mismatch",
         )
         return jsonify({"error": "Session mismatch"}), 409
 
@@ -595,8 +625,13 @@ def log_session():
     ]
     if mismatched_uids:
         print(
-            "[Logging REJECT] log uid/server user mismatch: "
-            f"log_uids={sorted(set(mismatched_uids))}, server_user={user_id}"
+            f"[log] REJECT user-mismatch server_user={user_id} "
+            f"log_uids={sorted(set(mismatched_uids))}"
+        )
+        _append_log_registry(
+            user_id=user_id, session_id=session_id, task_number=task_number,
+            num_events=num_events, saved_log_filename=None,
+            status="error", error="user-mismatch",
         )
         return jsonify({"error": "User mismatch"}), 409
 
@@ -633,6 +668,36 @@ def log_session():
             line = json.dumps(enriched) + '\n'
             full_f.write(line)
             task_f.write(line)
+
+    is_last_task = bool(task_order) and session.get("task_position", 0) >= len(task_order) - 1
+    is_session_end = any(
+        isinstance(e, dict) and e.get("type") == "experimentFinished"
+        for e in logs
+    )
+
+    if is_session_end:
+        marker = "SESSION_END"
+    elif is_last_task:
+        marker = "LAST_TASK"
+    else:
+        marker = None
+
+    if marker:
+        print(
+            f"[log] OK {marker} user={user_id} session={session_id} "
+            f"task={visible_task_number}/{len(task_order) or '?'} events={num_events} "
+            f"task_file={task_filename} full_file={combined_filename}"
+        )
+    else:
+        print(
+            f"[log] OK user={user_id} session={session_id} "
+            f"task={visible_task_number} events={num_events} file={task_filename}"
+        )
+    _append_log_registry(
+        user_id=user_id, session_id=session_id, task_number=visible_task_number,
+        num_events=num_events, saved_log_filename=task_filename,
+        status="success", error=None,
+    )
 
     return jsonify({
         "status":        "logged",

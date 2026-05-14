@@ -22,6 +22,10 @@
         sandbox="allow-same-origin allow-scripts allow-forms"
         title="Web page viewer">
     </iframe>
+    <div class="sol-loader is-pending" id="iframe-loader" aria-live="polite">
+      <div class="sol-loader__spinner" aria-hidden="true"></div>
+      <div class="sol-loader__text">Caricamento…</div>
+    </div>
   </section>
 </div>
 
@@ -83,8 +87,25 @@ document.addEventListener("DOMContentLoaded", () => {
     const frame = document.getElementById("webpage-frame");
     const backBtn = document.getElementById("viewer-back-btn");
 
+    const iframeLoader = document.getElementById("iframe-loader");
+    let iframeLoaderShown = false;
+    const iframeLoaderTimer = window.setTimeout(() => {
+        if (iframeLoader) {
+            iframeLoader.classList.remove("is-pending");
+            iframeLoaderShown = true;
+        }
+    }, 250);
+
+    function hideIframeLoader() {
+        window.clearTimeout(iframeLoaderTimer);
+        if (!iframeLoader) return;
+        iframeLoader.classList.add("is-hidden");
+        if (!iframeLoaderShown) iframeLoader.classList.add("is-pending");
+    }
+
     if (frame) {
         frame.addEventListener("load", () => {
+            hideIframeLoader();
             let readableUrl = null;
             try {
                 readableUrl = frame.contentWindow.location.href;
@@ -153,7 +174,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     backBtn?.addEventListener("click", () => emitClosed("back-button", "custom-back"));
-    window.addEventListener("pagehide", () => emitClosed("pagehide", "page-unload"));
+    window.addEventListener("pagehide", () => {
+        emitClosed("pagehide", "page-unload");
+        hideIframeLoader();
+    });
 });
 </script>
 {% endblock %}
