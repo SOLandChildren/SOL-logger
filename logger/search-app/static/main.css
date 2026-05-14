@@ -1404,3 +1404,26 @@ textarea:focus {
   background: rgba(255, 255, 255, 0.96);
   z-index: 9999;
 }
+
+/* Touch-device compact modal: shrink content so the iOS keyboard doesn't
+   cover the action buttons. Activates on iPad/iPhone/Android tablets. */
+@media (hover: none) and (pointer: coarse) {
+  .modal-content-box {
+    min-height: 0;
+    padding: 22px;
+  }
+
+  .modal-content-box h2 {
+    margin-bottom: 10px;
+    font-size: 1.3rem;
+  }
+
+  #feedbackModal textarea {
+    min-height: 80px;
+  }
+
+  .modal-buttons {
+    margin-top: 16px;
+    gap: 10px;
+  }
+}
