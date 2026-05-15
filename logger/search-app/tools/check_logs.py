@@ -22,7 +22,6 @@ SERP_QUERY_FIELD_EVENTS = {
     "resultExposureStarted",
     "resultExposureEnded",
     "searchNoResults",
-    "wentBack",
     "generatedDidYouMean",
     "hoverOverDidYouMean",
     "clickedDidYouMeanSuggestion",
@@ -36,7 +35,7 @@ REQUIRED_FIELDS = {
     "cursorEnteredSnippet": ("query", "docid", "rank", "page", "url"),
     "cursorLeftSnippet": ("query", "docid", "rank", "page", "url"),
     "pageNavigationClicked": ("clicked", "fromPage", "toPage", "targetURL"),
-    "wentBack": ("fromURL", "toURL", "returnType"),
+    "customBackButtonClicked": ("fromURL", "toURL"),
     "webpageOpened": ("url",),
     "webpageClosed": ("url", "durationMs", "exitReason"),
     "resultExposureStarted": ("query", "docid", "rank", "page", "url"),
@@ -48,16 +47,16 @@ REQUIRED_FIELDS = {
     "iframeNavigation": ("fromUrl", "toUrl", "windowLocation"),
     "iframeBackNavigation": ("fromUrl", "toUrl", "windowLocation"),
     "iframeNavigationTrackingLimited": ("reason", "url", "windowLocation"),
-    "browserBackBlocked": ("url", "pathname"),
+    "browserBackBlocked": ("url", "pathname", "fromURL", "toURL"),
 }
 
 PILOT_CHECKLIST = """
 Manual pilot checklist:
 - Search once, double-press Enter, confirm only one querySubmitted.
 - Paginate forward/back, confirm pageNavigationClicked.toPage is numeric and targetURL is present.
-- Click a resource and return, confirm wentBack.returnType is resource-to-serp.
-- Paginate between SERPs, confirm wentBack.returnType is serp-to-serp.
-- Press native browser Back, confirm browserBackBlocked appears and the current page stays in place.
+- Click a resource and return with the app back button, confirm customBackButtonClicked.toURL points to the SERP.
+- Use the SERP back button, confirm customBackButtonClicked.toURL points to the search page.
+- Press native browser Back, confirm browserBackBlocked appears with fromURL/toURL and the current page stays in place.
 - End from a resource page, confirm webpageClosed appears before TaskEnded.
 - Scroll the SERP, confirm resultExposureStarted/resultExposureEnded are paired and durations are plausible.
 - Try a no-result query, confirm searchNoResults has query/rawQuery/sanitizedQuery.

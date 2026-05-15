@@ -1,8 +1,8 @@
 """
 Tests for back button navigation logging.
 
-This test reproduces the BFCache-related issue where the logger fails to
-capture the 'wentBack' event when users click the browser back button.
+These tests cover the native browser back blocker and the app-level back
+button logging payloads.
 
 Requirements:
     - selenium
@@ -82,19 +82,47 @@ def get_browser_history(driver):
     return []
 
 
+def get_log_events(driver, event_type):
+    return [
+        log for log in get_session_logs(driver)
+        if log.get("type") == event_type
+    ]
+
+
+def wait_for_log_event(driver, event_type, minimum_count=1):
+    return WebDriverWait(driver, 10).until(
+        lambda d: (
+            events if len(events := get_log_events(d, event_type)) >= minimum_count else False
+        )
+    )
+
+
+def click_viewer_back_to_serp(driver):
+    back_button = WebDriverWait(driver, 10).until(
+        EC.element_to_be_clickable((By.ID, "viewer-back-btn"))
+    )
+    from_url = driver.current_url
+    to_url = back_button.get_attribute("href")
+    back_button.click()
+    WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, "article.content-section"))
+    )
+    return from_url, to_url
+
+
 class TestBackNavigationLogging:
     """Tests for back navigation event logging."""
 
-    def test_went_back_event_logged_on_back_navigation(self, driver, app_url, test_user_id):
+    def test_browser_back_blocked_event_logs_destination_url(self, driver, app_url, test_user_id):
         """
-        Test that 'wentBack' event is logged when user navigates back to SERP.
+        Test that native browser Back is blocked and logs destination details.
 
         Steps:
         1. Navigate to start page and enter user ID
         2. Submit a search query
         3. Click on a search result
         4. Press browser back button
-        5. Verify 'wentBack' event is in the logs
+        5. Verify browserBackBlocked includes fromURL and toURL
         """
         # Clear any existing state
         driver.get(app_url + "/start")
@@ -128,9 +156,7 @@ class TestBackNavigationLogging:
             EC.presence_of_element_located((By.CSS_SELECTOR, "article.content-section"))
         )
 
-        # Get initial log count
         initial_logs = get_session_logs(driver)
-        initial_log_count = len(initial_logs)
 
         # Verify searchResultGenerated events were logged
         result_events = [
@@ -143,7 +169,7 @@ class TestBackNavigationLogging:
         result_link = WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.CSS_SELECTOR, "a.result-link"))
         )
-        result_url = result_link.get_attribute("href")
+        navigation_url = result_link.get_attribute("href")
 
         # Store the current URL to verify we return to it
         serp_url = driver.current_url
@@ -156,23 +182,16 @@ class TestBackNavigationLogging:
         WebDriverWait(driver, 10).until(
             lambda d: d.current_url != serp_url
         )
+        resource_page_url = driver.current_url
 
         # Navigate back using browser back button
+        blocked_count_before = len(get_log_events(driver, "browserBackBlocked"))
         driver.back()
-
-        # Wait for page to load (either from BFCache or fresh)
-        # We should be back on the SERP page now
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "article.content-section"))
+        blocked_events = wait_for_log_event(
+            driver,
+            "browserBackBlocked",
+            blocked_count_before + 1,
         )
-
-        # Verify we're back on the SERP
-        assert "result" in driver.current_url, (
-            f"Expected to be back on SERP, but URL is {driver.current_url}"
-        )
-
-        # Small delay to allow pageshow event to fire and logging to complete
-        time.sleep(0.5)
 
         # Now we can read localStorage again (same origin)
         logs_after_back = get_session_logs(driver)
@@ -187,35 +206,30 @@ class TestBackNavigationLogging:
             f"Event types found: {[log.get('type') for log in logs_after_back]}"
         )
 
-        # Check for wentBack event (should be logged on return)
-        went_back_events = [
-            log for log in logs_after_back
-            if log.get("type") == "wentBack"
-        ]
-
-        assert len(went_back_events) > 0, (
-            f"wentBack event not logged after back navigation. "
-            f"Total events: {len(logs_after_back)}, "
-            f"Event types: {[log.get('type') for log in logs_after_back]}"
+        assert driver.current_url == resource_page_url, (
+            f"Expected browser Back to stay on protected resource page. "
+            f"Before: {resource_page_url}, after: {driver.current_url}"
         )
 
-        # Verify wentBack event has correct structure
-        went_back = went_back_events[0]
-        assert "query" in went_back, "wentBack missing 'query' field"
-        assert "fromURL" in went_back, "wentBack missing 'fromURL' field"
-        assert "toURL" in went_back, "wentBack missing 'toURL' field"
+        blocked = blocked_events[-1]
+        assert blocked["fromURL"] == resource_page_url
+        assert blocked["toURL"], "browserBackBlocked missing toURL"
+        assert blocked["url"] == blocked["fromURL"]
+        assert blocked["targetURL"] == blocked["toURL"]
+        assert not any(log.get("type") == "wentBack" for log in logs_after_back)
 
-        # Verify fromURL matches the result we clicked
-        assert went_back["fromURL"] == result_url, (
-            f"wentBack fromURL mismatch. Expected {result_url}, got {went_back['fromURL']}"
+        click_event = click_events[0]
+        assert click_event["navigationUrl"] == navigation_url, (
+            f"clickedResult navigationUrl mismatch. "
+            f"Expected {navigation_url}, got {click_event['navigationUrl']}"
         )
 
     def test_no_duplicate_search_result_events_on_back(self, driver, app_url):
         """
         Test that searchResultGenerated events are NOT duplicated on back navigation.
 
-        When returning via back button, only wentBack should be logged,
-        not new searchResultGenerated events for results already logged.
+        Returning via the app-level back button should not log new
+        searchResultGenerated events for results already logged.
         """
         # Clear state
         driver.get(app_url + "/start")
@@ -247,16 +261,14 @@ class TestBackNavigationLogging:
             if log.get("type") == "searchResultGenerated"
         ])
 
-        # Click result and go back
+        # Click result and return with the app-level back button
         result_link = driver.find_element(By.CSS_SELECTOR, "a.result-link")
         result_link.click()
-        time.sleep(0.5)
-        driver.back()
-
-        # Wait for page
         WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "article.content-section"))
+            EC.presence_of_element_located((By.ID, "viewer-back-btn"))
         )
+        from_url, to_url = click_viewer_back_to_serp(driver)
+
         time.sleep(0.5)
 
         # Count searchResultGenerated events after back
@@ -271,6 +283,11 @@ class TestBackNavigationLogging:
             f"searchResultGenerated events duplicated on back navigation. "
             f"Before: {initial_result_count}, After: {final_result_count}"
         )
+
+        custom_back_events = get_log_events(driver, "customBackButtonClicked")
+        assert custom_back_events, "customBackButtonClicked was not logged"
+        assert custom_back_events[-1]["fromURL"] == from_url
+        assert custom_back_events[-1]["toURL"] == to_url
 
     def test_event_listeners_not_duplicated(self, driver, app_url):
         """
@@ -298,15 +315,14 @@ class TestBackNavigationLogging:
             EC.presence_of_element_located((By.CSS_SELECTOR, "article.content-section"))
         )
 
-        # Click result, go back, repeat multiple times
+        # Click result, return with the app back button, repeat multiple times
         for _ in range(3):
             result_link = driver.find_element(By.CSS_SELECTOR, "a.result-link")
             result_link.click()
-            time.sleep(0.3)
-            driver.back()
             WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "article.content-section"))
+                EC.presence_of_element_located((By.ID, "viewer-back-btn"))
             )
+            click_viewer_back_to_serp(driver)
             time.sleep(0.3)
 
         # Now hover over a result
@@ -374,16 +390,16 @@ class TestBFCacheSpecific:
             "return window.localStorage.getItem('sessionID');"
         )
 
-        # Navigate away and back
+        # Navigate away and try native browser Back. The blocker should keep
+        # the app on the resource page while preserving the session.
         result_link = driver.find_element(By.CSS_SELECTOR, "a.result-link")
         result_link.click()
-        time.sleep(0.5)
-        driver.back()
-
         WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "article.content-section"))
+            EC.presence_of_element_located((By.ID, "viewer-back-btn"))
         )
-        time.sleep(0.5)
+        blocked_count_before = len(get_log_events(driver, "browserBackBlocked"))
+        driver.back()
+        wait_for_log_event(driver, "browserBackBlocked", blocked_count_before + 1)
 
         # Verify session ID is preserved (loaded from localStorage)
         session_id_after = driver.execute_script(

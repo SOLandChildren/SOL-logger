@@ -52,6 +52,13 @@ def get_session_logs(driver):
     return []
 
 
+def get_log_events(driver, event_type):
+    return [
+        log for log in get_session_logs(driver)
+        if log.get("type") == event_type
+    ]
+
+
 def clear_local_storage(driver):
     """Clear localStorage to reset logger state."""
     driver.execute_script("window.localStorage.clear();")
@@ -108,32 +115,32 @@ class TestBFCacheSimulation:
         """
         setup_search_session(driver, app_url, test_user_id)
 
-        # Get initial state
-        initial_logs = get_session_logs(driver)
-        initial_count = len(initial_logs)
-
-        # Simulate clicking a result by adding to history
+        # Simulate a BFCache restore to a URL that should be recovered back
+        # to the latest allowed app URL.
         driver.execute_script("""
-            if (window.studyLogger) {
-                window.studyLogger.addHistory('https://example.com/clicked-article');
-            }
+            window.sessionStorage.setItem(
+                'solLastAllowedAppUrl',
+                window.location.origin + '/search'
+            );
         """)
 
         # Simulate BFCache restore
         simulate_bfcache_restore(driver)
-        time.sleep(0.3)
+        browser_back_events = WebDriverWait(driver, 10).until(
+            lambda d: (
+                events if (events := get_log_events(d, "browserBackBlocked")) else False
+            )
+        )
 
-        # Check if wentBack was logged
         final_logs = get_session_logs(driver)
-        went_back_events = [
-            log for log in final_logs
-            if log.get("type") == "wentBack"
-        ]
+        browser_back = browser_back_events[-1]
 
-        assert len(went_back_events) > 0, (
-            f"wentBack event not logged after simulated BFCache restore. "
+        assert browser_back["fromURL"], "browserBackBlocked missing fromURL"
+        assert browser_back["toURL"].endswith("/search"), (
+            f"browserBackBlocked toURL did not point to recovery URL. "
             f"Events: {[log.get('type') for log in final_logs]}"
         )
+        assert not any(log.get("type") == "wentBack" for log in final_logs)
 
     def test_no_duplicate_listeners_after_multiple_bfcache_restores(
         self, driver, app_url, test_user_id

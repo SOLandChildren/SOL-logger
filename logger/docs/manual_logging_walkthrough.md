@@ -39,8 +39,7 @@ expected user flow.
 - `resultExposureEnded`: emitted when an active result exposure ends.
 - `clickedResult`: emitted when the user clicks a search result link.
 - `pageNavigationClicked`: emitted when the user clicks SERP pagination.
-- `wentBack`: emitted when app-level navigation returns to a known SERP or resource state.
-- `customBackButtonClicked`: emitted when the app-level back button is clicked.
+- `customBackButtonClicked`: emitted when the app-level back button is clicked, including the current URL and destination URL.
 - `logoOnSerpClicked`: emitted when the SERP logo link is clicked.
 - `taskQuestionHelpClicked`: emitted when the task help modal is opened.
 - `taskQuestionHelpClosed`: emitted when the task help modal is closed.
@@ -60,7 +59,7 @@ expected user flow.
 
 ### Browser back blocking
 
-- `browserBackBlocked`: emitted when native browser back navigation is intercepted, blocked, or redirected back to the latest allowed app URL.
+- `browserBackBlocked`: emitted when native browser back navigation is intercepted, blocked, or redirected back to the latest allowed app URL, including the current URL and target URL.
 
 ### Reward and completion
 
@@ -123,7 +122,6 @@ expected user flow.
 - `webpageLoadFailed`
 - `webpageLoadSucceeded`
 - `webpageOpened`
-- `wentBack`
 <!-- event-inventory:end -->
 
 ## Setup
@@ -155,12 +153,13 @@ to trigger `resultExposureEnded`.
 
 ### 4. Exercise pagination and SERP return logging
 
-Click a pagination control and confirm `pageNavigationClicked`. Use app-level
-navigation back to a previous result page or return from a resource page and
-confirm `wentBack` with the expected return metadata. Click the SERP back
-button and confirm `customBackButtonClicked`. Press the browser Back button
-and confirm the current app page stays in place while `browserBackBlocked` is
-logged.
+Click a pagination control and confirm `pageNavigationClicked`. Use the
+app-level back button from a resource page and confirm
+`customBackButtonClicked.fromURL` is the resource view and
+`customBackButtonClicked.toURL` is the destination SERP. Click the SERP back
+button and confirm `customBackButtonClicked.toURL` points to the search page.
+Press the browser Back button and confirm the current app page stays in place
+while `browserBackBlocked` is logged with `fromURL` and `toURL`.
 
 ### 5. Exercise did-you-mean and no-result logging
 
@@ -177,7 +176,7 @@ Click a result title and confirm `clickedResult`, `webpageOpened`, and
 the app-level back button or by ending the task, then confirm `webpageClosed`
 and `resourceViewEnded`. Pressing the native browser Back button from the
 resource view should keep the resource page open and log `browserBackBlocked`,
-not `wentBack`.
+including `fromURL` and `toURL`.
 
 ### 7. Exercise iframe navigation logging
 
