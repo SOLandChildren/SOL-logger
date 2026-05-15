@@ -9,6 +9,7 @@ import search_backend
 import uuid
 import random
 import traceback
+from time import time
 
 from urllib import response
 from flask import Flask, render_template, url_for, request, session, redirect, jsonify
@@ -18,7 +19,6 @@ from forms import SearchForm
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from urllib.parse import urlparse
-from spellchecker import SpellChecker
 
 app = Flask(__name__)
 
@@ -45,6 +45,11 @@ Session(app)
 CORS(app, supports_credentials=True)
 rpp = 10  # results per page for pagination; may be changed later
 
+# cache storage for query autocomplete suggestions
+AUTOCOMPLETE_CACHE = {}
+CACHE_TTL = 600  # 10 minutes
+SEARCH_BACKEND = os.getenv("SEARCH_BACKEND", "vertex").lower()
+
 LOG_DIR = 'logs'
 LOG_TIME_ZONE = ZoneInfo("Europe/Zurich")
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -65,36 +70,18 @@ SERP_QUERY_FIELD_EVENTS = {
     'clickedDidYouMeanSuggestion',
 }
 
-spell = SpellChecker(language='it')
-
-
 
 def _sanitize_for_filename(value):
     cleaned = re.sub(r'[^A-Za-z0-9._-]', '_', str(value))
     return cleaned[:64] or "anon"
 
-
 def sanitize_query(query):
-    # Removes all characters except letters, numbers, and spaces
-    # This is necessary for PyTerrier compatibility
-    # cleaned_query =  re.sub(r'[^\w\s]', '', query)
-
-    # query cleaning not needed for Vertex AI
-    cleaned_query =  query
-
-    words = spell.split_words(cleaned_query)
-    misspelled = spell.unknown(words)
-    corrected_query = ''
-
-    for word in words:
-        if word in misspelled:
-            corrected_word = spell.correction(word)
-            if corrected_word is not None:
-                word = corrected_word
-        corrected_query += word
-        corrected_query += ' '
-        
-    return cleaned_query, corrected_query.strip()
+    if SEARCH_BACKEND == "vertex":
+        cleaned_query =  query
+    else:
+        # if using pyterrier for retrieval, then query must be cleaned before any other processing
+        cleaned_query =  re.sub(r'[^\w\s]', '', query)
+    return cleaned_query
 
 def load_user_topics(filepath='data/user_topics.csv'):
     topics = {}
@@ -409,7 +396,7 @@ def result():
                                search_error="Inserisci una domanda prima di cercare.")
 
     rpp = 10 # results per page; may be changed later
-    query, corrected_query = sanitize_query(raw_query)
+    query = sanitize_query(raw_query)
 
     if not query.strip():
         return render_template(HOME_URL,
@@ -418,15 +405,16 @@ def result():
                                reminder=reminder,
                                search_error="Inserisci una domanda prima di cercare.")
 
-    def render_no_results(message):
+    def render_no_results(message, query_correction_source):
         session["search_results"] = []
         session["query"] = query
         session["raw_query"] = raw_query
         session["corrected_query"] = corrected_query
+        session["query_correction_source"] = query_correction_source
         return render_template(SEARCH_URL, title="Search Results",
                                search_results=[], query=query,
                                raw_query=raw_query,
-                               corrected_query=corrected_query, page=page,
+                               corrected_query=corrected_query, query_correction_source=query_correction_source, page=page,
                                total_pages=0, show_search=True,
                                reminder=reminder,
                                no_results_message=message)
@@ -452,12 +440,13 @@ def result():
         all_results = [normalize_result(result) for result in cached_results]
         raw_query = session.get("raw_query", raw_query)
         corrected_query = session.get("corrected_query", corrected_query)
+        query_correction_source = session.get("query_correction_source", query_correction_source)
     else:
         try:
-            raw_results, _ = search_backend.search(query, page, rpp)
+            corrected_query, raw_results, _, query_correction_source = search_backend.search(query, page, rpp)
         except Exception:
             if ALLOW_ANSWER_WITHOUT_RESULTS_FOR_TESTING:
-                return render_no_results("Modalità test: nessun risultato disponibile, ma puoi comunque scrivere una risposta.")
+                return render_no_results("Modalità test: nessun risultato disponibile, ma puoi comunque scrivere una risposta.", query_correction_source=query_correction_source)
             return render_template(ERROR_URL, show_search=False,
                                    error_title="Connection Error",
                                    error_message="Could not connect to the search engine. Please try again later.",
@@ -468,9 +457,10 @@ def result():
         session["query"] = query
         session["raw_query"] = raw_query
         session["corrected_query"] = corrected_query
+        session["query_correction_source"] = query_correction_source
 
     if len(all_results) == 0:
-        return render_no_results("Non ci sono risultati per la vostra domanda. Provate a fare un'altra domanda!")
+        return render_no_results("Non ci sono risultati per la vostra domanda. Provate a fare un'altra domanda!", query_correction_source=query_correction_source)
 
     total_results = len(all_results)
     total_pages = min(10, math.ceil(total_results / rpp))
@@ -482,7 +472,7 @@ def result():
                            query=query, raw_query=raw_query,
                            corrected_query=corrected_query,
                            page=page, total_pages=total_pages,
-                           show_search=True, reminder=reminder)
+                           show_search=True, reminder=reminder, query_correction_source=query_correction_source)
 
 @app.route("/webpage")
 def webpage():
@@ -552,6 +542,10 @@ def autocomplete():
 
     if not query or len(query) < 3:
         return jsonify({"suggestions": [], "source": "none", "query_model": None})
+    
+    cached = AUTOCOMPLETE_CACHE.get(query)
+    if cached and time() - cached["time"] < CACHE_TTL:
+        return cached["data"]
 
     try:
         suggestions, source = search_backend.autocomplete(query)
