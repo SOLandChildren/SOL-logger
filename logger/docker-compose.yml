@@ -1,4 +1,3 @@
-version: "3"
 services:
   search_app:
     build: ./search-app
@@ -14,7 +13,7 @@ services:
       - ./search-app/API_keys.json:/API_keys.json
       - ./search-app/service_account.json:/service_account.json
     environment:
-      SEARCH_BACKEND: "vertex"
+      SEARCH_BACKEND: "vertex"  # ← Set the environment variable to "bm25" or "vertex" to change between search engines 
       GOOGLE_APPLICATION_CREDENTIALS: "/service_account.json"
       PYTHONUNBUFFERED: "1"
     networks:

@@ -41,23 +41,10 @@
     function formatSwissTimestamp(date = new Date()) {
         const parts = getZonedParts(date, LOG_TIME_ZONE);
         const milliseconds = date.getMilliseconds();
-        const zonedAsUTC = Date.UTC(
-            parts.year,
-            parts.month - 1,
-            parts.day,
-            parts.hour,
-            parts.minute,
-            parts.second,
-            milliseconds
-        );
-        const offsetMinutes = Math.round((zonedAsUTC - date.getTime()) / 60000);
-        const offsetSign = offsetMinutes >= 0 ? "+" : "-";
-        const absoluteOffset = Math.abs(offsetMinutes);
 
         return `${parts.year}-${padNumber(parts.month)}-${padNumber(parts.day)}`
             + `T${padNumber(parts.hour)}:${padNumber(parts.minute)}:${padNumber(parts.second)}`
-            + `.${padNumber(milliseconds, 3)}${offsetSign}`
-            + `${padNumber(Math.floor(absoluteOffset / 60))}:${padNumber(absoluteOffset % 60)}`;
+            + `.${padNumber(milliseconds, 3)}`;
     }
 
     function safeParseArray(rawValue) {
@@ -140,6 +127,14 @@
         },
         
         logEvent(type, details = {}) {
+            if (typeof window !== 'undefined'
+                && window.taskEndLockout
+                && type !== "ClickedEndTaskConfirmation"
+                && type !== "TaskEnded"
+                && type !== "browserBackBlocked"
+                && type !== "resourceViewEnded") {
+                return;
+            }
             const event = {
                 type,
                 timestamp: formatSwissTimestamp(),
@@ -204,6 +199,160 @@
     window.studyLogger = logger;
 })();
 
+const BROWSER_BACK_BLOCKER_HISTORY_DEPTH = 10;
+const BROWSER_BACK_BLOCKER_GUARD_STATE_KEY = "__solBrowserBackBlockerGuard";
+const BROWSER_BACK_BLOCKER_BASE_STATE_KEY = "__solBrowserBackBlockerBase";
+const LAST_ALLOWED_APP_URL_SESSION_KEY = "solLastAllowedAppUrl";
+
+window.__SOLBrowserBackRecoveryInProgress = false;
+let browserBackBarrierArmedUrl = null;
+
+function getCurrentWindowUrl() {
+    return window.location?.href || window.location?.origin || "";
+}
+
+function getCurrentWindowPathname() {
+    return window.location?.pathname || "";
+}
+
+function getPageNavigationType() {
+    const entries = window.performance?.getEntriesByType?.("navigation") || [];
+    return entries[0]?.type || "";
+}
+
+function isSameOriginUrl(url) {
+    if (!url) return false;
+    try {
+        return new URL(url, getCurrentWindowUrl()).origin === window.location.origin;
+    } catch (_) {
+        return false;
+    }
+}
+
+function getLastAllowedAppUrl() {
+    try {
+        return sessionStorage.getItem(LAST_ALLOWED_APP_URL_SESSION_KEY);
+    } catch (_) {
+        return null;
+    }
+}
+
+function storeLastAllowedAppUrl() {
+    const currentUrl = getCurrentWindowUrl();
+    if (!currentUrl) return;
+    try {
+        sessionStorage.setItem(LAST_ALLOWED_APP_URL_SESSION_KEY, currentUrl);
+    } catch (_) {}
+}
+
+function buildBrowserBackBlockerHistoryState(extraState = {}) {
+    const currentState = window.history?.state;
+    const safeCurrentState = (
+        currentState && typeof currentState === "object" && !Array.isArray(currentState)
+    ) ? currentState : {};
+
+    return {
+        ...safeCurrentState,
+        ...extraState,
+        solUrl: getCurrentWindowUrl()
+    };
+}
+
+function logNativeBrowserBackBlocked(reason, targetURL = null) {
+    if (!window.studyLogger) return;
+    window.studyLogger.logEvent("browserBackBlocked", {
+        url: getCurrentWindowUrl(),
+        pathname: getCurrentWindowPathname(),
+        reason,
+        targetURL,
+        navigationType: getPageNavigationType()
+    });
+}
+
+function armBrowserBackHistoryBarrier(force = false) {
+    if (!window.history?.replaceState || !window.history?.pushState) return;
+
+    const currentUrl = getCurrentWindowUrl();
+    if (!force && browserBackBarrierArmedUrl === currentUrl) return;
+
+    try {
+        window.history.replaceState(
+            buildBrowserBackBlockerHistoryState({
+                [BROWSER_BACK_BLOCKER_BASE_STATE_KEY]: true
+            }),
+            "",
+            currentUrl
+        );
+
+        for (let index = 0; index < BROWSER_BACK_BLOCKER_HISTORY_DEPTH; index += 1) {
+            window.history.pushState(
+                buildBrowserBackBlockerHistoryState({
+                    [BROWSER_BACK_BLOCKER_GUARD_STATE_KEY]: true,
+                    browserBackBlockerGuardIndex: index
+                }),
+                "",
+                currentUrl
+            );
+        }
+        browserBackBarrierArmedUrl = currentUrl;
+    } catch (err) {
+        console.warn("Failed to arm browser back blocker:", err);
+    }
+}
+
+function getRecoveryUrlForNativeBackNavigation(event = null) {
+    const lastAllowedUrl = getLastAllowedAppUrl();
+    const currentUrl = getCurrentWindowUrl();
+    const navigationType = getPageNavigationType();
+    const isBackForwardNavigation = Boolean(event?.persisted) || navigationType === "back_forward";
+
+    if (!isBackForwardNavigation) return null;
+    if (!lastAllowedUrl || lastAllowedUrl === currentUrl) return null;
+    if (!isSameOriginUrl(lastAllowedUrl)) return null;
+
+    return lastAllowedUrl;
+}
+
+function redirectNativeBackNavigationToLastAllowedUrl(reason, event = null) {
+    const targetURL = getRecoveryUrlForNativeBackNavigation(event);
+    if (!targetURL) return false;
+
+    window.__SOLBrowserBackRecoveryInProgress = true;
+    logNativeBrowserBackBlocked(reason, targetURL);
+
+    try {
+        window.location.replace(targetURL);
+    } catch (err) {
+        console.warn("Failed to recover from native browser back:", err);
+    }
+    return true;
+}
+
+function installNativeBrowserBackBlocker() {
+    if (!window.history?.replaceState || !window.history?.pushState) return;
+
+    window.addEventListener("popstate", () => {
+        logNativeBrowserBackBlocked("popstate", getCurrentWindowUrl());
+        armBrowserBackHistoryBarrier(true);
+        storeLastAllowedAppUrl();
+    });
+
+    window.addEventListener("pageshow", (event) => {
+        if (redirectNativeBackNavigationToLastAllowedUrl("pageshow", event)) return;
+
+        window.__SOLBrowserBackRecoveryInProgress = false;
+        storeLastAllowedAppUrl();
+        armBrowserBackHistoryBarrier();
+    }, true);
+
+    if (redirectNativeBackNavigationToLastAllowedUrl("back-forward-load")) return;
+
+    storeLastAllowedAppUrl();
+    armBrowserBackHistoryBarrier();
+}
+
+installNativeBrowserBackBlocker();
+
 const idform = document.getElementById("enter-id-form");
 if (idform) {
   idform.addEventListener("submit", (e) => {
@@ -230,6 +379,35 @@ function getAutocompleteSuggestions() {
         : [];
 }
 
+function getAutocompleteContext() {
+    const context = window.autocompleteContext || {};
+    const suggestions = Array.isArray(context.suggestions)
+        ? context.suggestions
+        : getAutocompleteSuggestions();
+
+    return {
+        autocompletePrefix: typeof context.prefix === "string" ? context.prefix : "",
+        autocompleteSuggestions: suggestions,
+        autocompleteSource: context.source || "none",
+        autocompleteQueryModel: context.queryModel || null
+    };
+}
+
+function getAutocompleteSelectedSuggestion(value) {
+    const selectedSuggestion = (value || "").trim();
+    if (!selectedSuggestion) return null;
+    return getAutocompleteSuggestions().includes(selectedSuggestion)
+        ? selectedSuggestion
+        : null;
+}
+
+function getAutocompleteLogContext(value = null) {
+    return {
+        ...getAutocompleteContext(),
+        autocompleteSelectedSuggestion: getAutocompleteSelectedSuggestion(value)
+    };
+}
+
 function logAutocompleteSelection(value, trigger) {
     const selectedSuggestion = (value || "").trim();
     if (!selectedSuggestion) return;
@@ -240,7 +418,8 @@ function logAutocompleteSelection(value, trigger) {
     studyLogger.logEvent("choseAutoCompleteSuggestion", {
         query: searchbox?.value || "",
         selectedSuggestion,
-        trigger
+        trigger,
+        ...getAutocompleteLogContext(selectedSuggestion)
     });
 }
 
@@ -298,7 +477,12 @@ if (searchbar) {
         logAutocompleteSelection(query, "submit");
         querySubmitInProgress = true;
         submittedQuery = query;
-        studyLogger.logEvent("querySubmitted", { query });
+        studyLogger.logEvent("querySubmitted", {
+            query,
+            rawQuery: query,
+            sanitizedQuery: query,
+            ...getAutocompleteLogContext(query)
+        });
     });
 
     window.addEventListener("pageshow", () => {
@@ -600,6 +784,7 @@ function logSERP() {
     }
 }
 
+// cursorEnteredSnippet / cursorLeftSnippet are desktop-only signals; iPad/touch will not fire mouseenter/mouseleave reliably.
 function logMouseHovers(){
     const searchSnippets = document.querySelectorAll("article.content-section");
     if(searchSnippets){
@@ -651,8 +836,9 @@ function logClicks(){
                 const rank = getResultRank(link);
                 const details = getResultDetails(rank);
                 if (!details) return;
-                
-                flushActiveResultExposures("result-click");
+
+                endResultExposure(rank, "result-click");
+                flushActiveResultExposures("linkWasVisibleInSerpResults");
                 studyLogger.addHistory(details.navigationUrl);
                 studyLogger.logEvent("clickedResult", {
                     query: details.query,
@@ -662,8 +848,8 @@ function logClicks(){
                     rank: details.rank,
                     page: details.page,
                     url: details.url,
-                    windowLocation: details.navigationUrl,
-                    // history: studyLogger.getHistory(),
+                    windowLocation: details.windowLocation,
+                    navigationUrl: details.navigationUrl,
                 });
 
             });
@@ -699,6 +885,8 @@ function logPageNavigation(){
 let listenersAttached = false;
 
 function loggingSearchActions(isPageShow = false){
+    if (window.__SOLBrowserBackRecoveryInProgress) return;
+
     // When restored from BFCache, re-sync logger state from localStorage
     if (isPageShow) {
         studyLogger.init();
@@ -717,63 +905,26 @@ function loggingSearchActions(isPageShow = false){
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+    if (window.__SOLBrowserBackRecoveryInProgress) return;
+
     logNoResults();
     loggingSearchActions(false);
 });
 
 window.addEventListener("pageshow", (e) => {
+    if (window.__SOLBrowserBackRecoveryInProgress) return;
+
     if (e.persisted) {
-        // Page restored from BFCache - re-run SERP logging for back detection
-        if (window.studyLogger) {
-            studyLogger.logEvent("browserBackDetected", {
-                url: window.location.href,
-                pathname: window.location.pathname
-            });
-        }
         loggingSearchActions(true);
     }
 });
 
-if (typeof performance !== 'undefined' && performance.getEntriesByType) {
-    const navEntry = performance.getEntriesByType("navigation")[0];
-    if (navEntry && navEntry.type === "back_forward" && window.studyLogger) {
-        studyLogger.logEvent("browserBackDetected", {
-            url: window.location.href,
-            pathname: window.location.pathname,
-            navigationType: "back_forward"
-        });
-    }
-}
-
-// Fallback for browsers that don't use BFCache but still have back navigation issues
 window.addEventListener("pagehide", (e) => {
     flushActiveResultExposures("pagehide");
-    // Reset flag so listeners are re-attached if page is reloaded fresh
     if (!e.persisted) {
         listenersAttached = false;
     }
 });
-
-
-const endyes = document.getElementById("yes-end-btn")
-if (endyes) {
-    endyes.addEventListener("click", () => {
-        studyLogger.logEvent("TaskEndConfirmed");
-    });
-}
-
-const feedbackbtn = document.getElementById("feedback-btn")
-if (feedbackbtn) {
-    feedbackbtn.addEventListener("click", () => {
-        if (window.taskEndedLogged) return;
-        flushActiveResultExposures("task-end");
-        const fb = document.getElementById("textarea_feedback")?.value || "";
-        studyLogger.logEvent("TaskEnded", {
-            answer: fb
-        });
-        window.taskEndedLogged = true;
-    });
-}
 
 window.flushActiveResultExposures = flushActiveResultExposures;
 window.__SOLLoggerInternals = {
@@ -796,7 +947,7 @@ if (endno) {
 const serpBackBtn = document.getElementById("serp-back-btn");
 if (serpBackBtn) {
     serpBackBtn.addEventListener("click", () => {
-        studyLogger.logEvent("customBackClicked", {
+        studyLogger.logEvent("customBackButtonClicked", {
             fromPageType: "serp",
             url: window.location.href
         });
@@ -806,7 +957,7 @@ if (serpBackBtn) {
 const viewerBackBtn = document.getElementById("viewer-back-btn");
 if (viewerBackBtn) {
     viewerBackBtn.addEventListener("click", () => {
-        studyLogger.logEvent("customBackClicked", {
+        studyLogger.logEvent("customBackButtonClicked", {
             fromPageType: "webpage",
             url: window.location.href
         });
@@ -816,7 +967,7 @@ if (viewerBackBtn) {
 const serpLogoLink = document.getElementById("serp-logo-link");
 if (serpLogoLink) {
     serpLogoLink.addEventListener("click", () => {
-        studyLogger.logEvent("logoClicked", {
+        studyLogger.logEvent("logoOnSerpClicked", {
             fromURL: window.location.href,
             toURL: serpLogoLink.href,
             returnType: "logoToSearch"

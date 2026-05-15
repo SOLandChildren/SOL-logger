@@ -8,9 +8,7 @@ alongside the existing Selenium tests.
 import json
 import re
 import subprocess
-from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 
 APP_ROOT = Path(__file__).resolve().parents[1]
@@ -73,21 +71,19 @@ def test_logger_uses_europe_zurich_timestamp_not_utc_iso():
     assert "+03:00" not in source
 
 
-def test_logged_event_timestamp_has_switzerland_offset():
+def test_logged_event_timestamp_uses_swiss_local_time_without_timezone_suffix():
     result = run_logger_node_script("""
         window.studyLogger.logEvent("timestampProbe");
         console.log(JSON.stringify(window.studyLogger.logs[0]));
     """)
     event = json.loads(result.stdout.strip().splitlines()[-1])
     timestamp = event["timestamp"]
-    expected_offset = datetime.now(ZoneInfo("Europe/Zurich")).strftime("%z")
-    expected_offset = f"{expected_offset[:3]}:{expected_offset[3:]}"
 
     assert event["type"] == "timestampProbe"
-    assert timestamp.endswith(expected_offset)
     assert not timestamp.endswith("Z")
+    assert not re.search(r"[+-]\d{2}:\d{2}$", timestamp)
     assert re.fullmatch(
-        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2}",
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}",
         timestamp,
     )
 
@@ -96,14 +92,17 @@ def test_webpage_closed_has_duration_exit_reason_guard_and_fallback():
     source = WEBPAGE_HTML.read_text(encoding="utf-8")
 
     assert 'studyLogger.logEvent("webpageOpened", { url: viewedUrl })' in source
-    assert "let webpageClosedLogged = false" in source
-    assert "webpageClosedLogged = true" in source
+    assert "let closedLogged = false" in source
+    assert "closedLogged = true" in source
     assert 'studyLogger.logEvent("webpageClosed"' in source
-    assert "durationMs: Date.now() - webpageOpenedAt" in source
-    assert "exitReason: reason" in source
-    assert "window.logOpenWebpageClosed = emitClosed" in source
-    assert 'emitClosed("back-button")' in source
-    assert 'window.addEventListener("pagehide", () => emitClosed("pagehide"))' in source
+    assert "const dwellTimeMs = Date.now() - webpageOpenedAt" in source
+    assert "durationMs: dwellTimeMs" in source
+    assert "exitReason: legacyReason" in source
+    assert "exitReason: resourceReason" in source
+    assert "window.logOpenWebpageClosed = (reason) =>" in source
+    assert 'emitClosed(reason || "end-task-button", "end-task")' in source
+    assert 'emitClosed("back-button", "custom-back")' in source
+    assert 'window.addEventListener("pagehide", () => emitClosed("pagehide", "page-unload"))' in source
 
 
 def test_answer_submission_closes_open_webpage_before_task_ended():
@@ -116,6 +115,41 @@ def test_answer_submission_closes_open_webpage_before_task_ended():
     assert 'typeof window.logOpenWebpageClosed === "function"' in source
     assert exposure_index < task_ended_index
     assert close_index < task_ended_index
+
+
+def test_modal_close_logging_contract():
+    source = LAYOUT_HTML.read_text(encoding="utf-8")
+    end_task_close = source[
+        source.index("function closeEndTaskModal()"):
+        source.index("function closeFeedbackModal()")
+    ]
+    feedback_close = source[
+        source.index("function closeFeedbackModal()"):
+        source.index("function toggleSavedTitles")
+    ]
+    confirm_branch = source[
+        source.index("yesEndBtn.addEventListener"):
+        source.index("\n        if (continueBtn) {\n", source.index("yesEndBtn.addEventListener"))
+    ]
+
+    assert "window._feedbackCloseReason='x-button'; closeFeedbackModal()" in source
+    assert 'studyLogger.logEvent("AnswerBoxClosed", { reason: "x-button" });' in feedback_close
+    assert 'studyLogger.logEvent("AnswerBoxClosed", { reason: "x-close" });' not in source
+    assert 'studyLogger.logEvent("AnswerBoxClosed", { reason: "continue-search" });' in feedback_close
+
+    dialog_closed_index = end_task_close.index(
+        'studyLogger.logEvent("EndTaskDialogClosed", { reason: "x-close" });'
+    )
+    confirmation_closed_index = end_task_close.index(
+        'studyLogger.logEvent("EndTaskConfirmationClosed", { reason: "x-button" });'
+    )
+    task_continued_index = end_task_close.index('studyLogger.logEvent("TaskContinued");')
+    assert dialog_closed_index < confirmation_closed_index < task_continued_index
+
+    assert 'studyLogger.logEvent("ClickedEndTaskConfirmation");' in confirm_branch
+    assert 'studyLogger.logEvent("TaskEnded", { answer });' in confirm_branch
+    assert "EndTaskConfirmationClosed" not in confirm_branch
+    assert "TaskContinued" not in confirm_branch
 
 
 def test_log_session_warns_only_for_expected_logging_contract_issues():
@@ -152,6 +186,15 @@ def test_log_session_writes_full_and_per_task_logs_without_aggregate_outputs():
     assert not (APP_ROOT / "tests" / "test_log_aggregation.py").exists()
 
 
+def test_log_filename_timestamp_uses_europe_zurich_timezone():
+    source = SEARCH_APP.read_text(encoding="utf-8")
+
+    assert "from zoneinfo import ZoneInfo" in source
+    assert 'LOG_TIME_ZONE = ZoneInfo("Europe/Zurich")' in source
+    assert "datetime.now(LOG_TIME_ZONE).strftime('%Y-%m-%d_%H-%M-%S')" in source
+    assert "datetime.now().strftime('%Y-%m-%d_%H-%M-%S')" not in source
+
+
 def test_start_post_resets_server_session_before_new_experiment_state():
     source = SEARCH_APP.read_text(encoding="utf-8")
     start_index = source.index("def start_page():")
@@ -165,8 +208,29 @@ def test_start_post_resets_server_session_before_new_experiment_state():
     assert post_index < clear_index < user_index < session_id_index < log_id_index < order_index
     assert "session['pieces_earned'] = []" in source
     assert "session['tasks_started'] = []" in source
+    assert "session['reward_shown_logged'] = []" in source
     assert "session['last_active'] = datetime.now().isoformat()" in source
     assert "session[\"search_results\"]" not in source[post_index:order_index]
+
+
+def test_reward_shown_server_logging_is_idempotent_per_task():
+    source = SEARCH_APP.read_text(encoding="utf-8")
+    reward_source = source[
+        source.index("def reward():"):
+        source.index("@app.route('/thank_you')")
+    ]
+
+    key_index = reward_source.index('reward_log_key = f"{display_task_number}:{task_number}"')
+    logged_index = reward_source.index("reward_shown_logged = session.get('reward_shown_logged', [])")
+    guard_index = reward_source.index("if log_id and user_id and reward_log_key not in reward_shown_logged:")
+    write_index = reward_source.index("f.write(line)")
+    append_index = reward_source.index("reward_shown_logged.append(reward_log_key)")
+    assign_index = reward_source.index("session['reward_shown_logged'] = reward_shown_logged")
+
+    assert key_index < guard_index < write_index < append_index < assign_index
+    assert logged_index < guard_index
+    assert '"type": "rewardShown"' in reward_source
+    assert '"source": "server"' in reward_source
 
 
 def test_client_cleanup_clears_local_session_and_in_memory_logger_state():
@@ -251,16 +315,18 @@ def test_raw_and_sanitized_query_fields_on_serp_contract():
 
 def test_result_exposure_logging_contract():
     source = LOGGER_JS.read_text(encoding="utf-8")
+    layout_source = LAYOUT_HTML.read_text(encoding="utf-8")
 
     assert "const RESULT_EXPOSURE_THRESHOLD = 0.5" in source
     assert "const RESULT_EXPOSURE_MIN_MS = 250" in source
     assert 'studyLogger.logEvent("resultExposureStarted"' in source
     assert 'studyLogger.logEvent("resultExposureEnded"' in source
-    assert 'flushActiveResultExposures("result-click")' in source
+    assert 'endResultExposure(rank, "result-click")' in source
+    assert 'flushActiveResultExposures("linkWasVisibleInSerpResults")' in source
     assert 'flushActiveResultExposures("pagination")' in source
     assert 'flushActiveResultExposures("new-search")' in source
     assert 'flushActiveResultExposures("pagehide")' in source
-    assert 'flushActiveResultExposures("task-end")' in source
+    assert 'window.flushActiveResultExposures("task-end")' in layout_source
     assert "IntersectionObserver" in source
     assert "durationMs" in source
     assert "exitReason" in source
@@ -268,11 +334,22 @@ def test_result_exposure_logging_contract():
 
 def test_autocomplete_and_no_results_logging_contract():
     logger_source = LOGGER_JS.read_text(encoding="utf-8")
+    layout_source = LAYOUT_HTML.read_text(encoding="utf-8")
+    search_app_source = SEARCH_APP.read_text(encoding="utf-8")
     search_source = SEARCH_HTML.read_text(encoding="utf-8")
 
     assert 'studyLogger.logEvent("choseAutoCompleteSuggestion"' in logger_source
     assert 'searchbox.addEventListener("change"' in logger_source
     assert 'logAutocompleteSelection(query, "submit")' in logger_source
+    assert "getAutocompleteLogContext(query)" in logger_source
+    assert "getAutocompleteLogContext(selectedSuggestion)" in logger_source
+    assert "autocompleteSuggestions" in logger_source
+    assert "autocompleteSource" in logger_source
+    assert "autocompleteQueryModel" in logger_source
+    assert "autocompleteSelectedSuggestion" in logger_source
+    assert "window.autocompleteContext" in layout_source
+    assert "autocompleteRequestSequence" in layout_source
+    assert "query_model" in search_app_source
     assert 'studyLogger.logEvent("searchNoResults"' in logger_source
     assert "data-log-no-results=\"true\"" in search_source
 
@@ -290,12 +367,14 @@ def test_offline_checker_contains_checks_and_manual_checklist():
 if __name__ == "__main__":
     for test in (
         test_logger_uses_europe_zurich_timestamp_not_utc_iso,
-        test_logged_event_timestamp_has_switzerland_offset,
+        test_logged_event_timestamp_uses_swiss_local_time_without_timezone_suffix,
         test_webpage_closed_has_duration_exit_reason_guard_and_fallback,
         test_answer_submission_closes_open_webpage_before_task_ended,
         test_log_session_warns_only_for_expected_logging_contract_issues,
         test_log_session_writes_full_and_per_task_logs_without_aggregate_outputs,
+        test_log_filename_timestamp_uses_europe_zurich_timezone,
         test_start_post_resets_server_session_before_new_experiment_state,
+        test_reward_shown_server_logging_is_idempotent_per_task,
         test_client_cleanup_clears_local_session_and_in_memory_logger_state,
         test_duplicate_query_submit_suppression_contract,
         test_italian_pagination_target_parsing,

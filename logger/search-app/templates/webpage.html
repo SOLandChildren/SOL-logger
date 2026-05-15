@@ -30,9 +30,20 @@ document.addEventListener("DOMContentLoaded", () => {
     const viewedUrl = {{ url|tojson }};
     if (!window.studyLogger) return;
 
+    const windowLocationAtOpen = location.href;
     const webpageOpenedAt = Date.now();
-    let webpageClosedLogged = false;
+    let currentKnownIframeUrl = viewedUrl;
+    const iframeHistory = [];
+    let initialLoadHandled = false;
+    let programmaticBackInFlight = false;
+    let trackingLimitedLogged = false;
+    let closedLogged = false;
+
     studyLogger.logEvent("webpageOpened", { url: viewedUrl });
+    studyLogger.logEvent("resourceViewStarted", {
+        url: viewedUrl,
+        windowLocation: windowLocationAtOpen
+    });
 
     fetch("/iframe_check?url=" + encodeURIComponent(viewedUrl))
         .then(r => r.json())
@@ -49,21 +60,100 @@ document.addEventListener("DOMContentLoaded", () => {
                                  { url: viewedUrl, reason: "fetch-error" });
         });
 
-    function emitClosed(reason) {
-        if (!window.studyLogger || webpageClosedLogged) return;
-        webpageClosedLogged = true;
+    function emitClosed(legacyReason, resourceReason) {
+        if (!window.studyLogger || closedLogged) return;
+        closedLogged = true;
+        const dwellTimeMs = Date.now() - webpageOpenedAt;
         studyLogger.logEvent("webpageClosed", {
             url: viewedUrl,
-            durationMs: Date.now() - webpageOpenedAt,
-            exitReason: reason
+            durationMs: dwellTimeMs,
+            exitReason: legacyReason
+        });
+        studyLogger.logEvent("resourceViewEnded", {
+            url: currentKnownIframeUrl,
+            windowLocation: windowLocationAtOpen,
+            dwellTimeMs,
+            exitReason: resourceReason
         });
     }
 
-    window.logOpenWebpageClosed = emitClosed;
+    window.logOpenWebpageClosed = (reason) =>
+        emitClosed(reason || "end-task-button", "end-task");
 
-    document.getElementById("viewer-back-btn")
-        ?.addEventListener("click", () => emitClosed("back-button"));
-    window.addEventListener("pagehide", () => emitClosed("pagehide"));
+    const frame = document.getElementById("webpage-frame");
+    const backBtn = document.getElementById("viewer-back-btn");
+
+    if (frame) {
+        frame.addEventListener("load", () => {
+            let readableUrl = null;
+            try {
+                readableUrl = frame.contentWindow.location.href;
+            } catch (_) {
+                if (!trackingLimitedLogged) {
+                    trackingLimitedLogged = true;
+                    studyLogger.logEvent("iframeNavigationTrackingLimited", {
+                        reason: "cross-origin-access-blocked",
+                        url: viewedUrl,
+                        windowLocation: windowLocationAtOpen
+                    });
+                }
+                return;
+            }
+
+            if (!initialLoadHandled) {
+                initialLoadHandled = true;
+                currentKnownIframeUrl = readableUrl;
+                return;
+            }
+
+            if (programmaticBackInFlight) {
+                programmaticBackInFlight = false;
+                return;
+            }
+
+            if (readableUrl === currentKnownIframeUrl) return;
+
+            const fromUrl = currentKnownIframeUrl;
+            iframeHistory.push(fromUrl);
+            currentKnownIframeUrl = readableUrl;
+            studyLogger.logEvent("iframeNavigation", {
+                fromUrl,
+                toUrl: readableUrl,
+                windowLocation: windowLocationAtOpen
+            });
+        });
+    }
+
+    if (backBtn && frame) {
+        backBtn.addEventListener("click", (e) => {
+            if (iframeHistory.length === 0) return;
+            let canProbe = false;
+            try { void frame.contentWindow.location.href; canProbe = true; } catch (_) {}
+            if (!canProbe) return;
+
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            const fromUrl = currentKnownIframeUrl;
+            const toUrl = iframeHistory.pop();
+            currentKnownIframeUrl = toUrl;
+            programmaticBackInFlight = true;
+            frame.src = toUrl;
+            studyLogger.logEvent("iframeBackNavigation", {
+                fromUrl,
+                toUrl,
+                windowLocation: windowLocationAtOpen
+            });
+        }, true);
+        // Capture phase: runs before the bubble-phase handlers in logger.js
+        // (customBackButtonClicked) and below (emitClosed). Suppression via
+        // stopImmediatePropagation is only robust because those handlers are
+        // bubble-phase; an earlier capture-phase listener elsewhere could
+        // still run before this one (registration order applies within a
+        // single phase).
+    }
+
+    backBtn?.addEventListener("click", () => emitClosed("back-button", "custom-back"));
+    window.addEventListener("pagehide", () => emitClosed("pagehide", "page-unload"));
 });
 </script>
 {% endblock %}

@@ -9,10 +9,11 @@ from pathlib import Path
 
 
 TIMESTAMP_RE = re.compile(
-    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2}$"
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}(?:[+-]\d{2}:\d{2})?$"
 )
 
 SERP_QUERY_FIELD_EVENTS = {
+    "querySubmitted",
     "searchResultGenerated",
     "clickedResult",
     "cursorEnteredSnippet",
@@ -31,7 +32,7 @@ REQUIRED_FIELDS = {
     "idSubmitted": ("uid",),
     "querySubmitted": ("query",),
     "searchResultGenerated": ("query", "docid", "rank", "page", "url"),
-    "clickedResult": ("query", "docid", "rank", "page", "url"),
+    "clickedResult": ("query", "docid", "rank", "page", "url", "windowLocation", "navigationUrl"),
     "cursorEnteredSnippet": ("query", "docid", "rank", "page", "url"),
     "cursorLeftSnippet": ("query", "docid", "rank", "page", "url"),
     "pageNavigationClicked": ("clicked", "fromPage", "toPage", "targetURL"),
@@ -41,6 +42,13 @@ REQUIRED_FIELDS = {
     "resultExposureStarted": ("query", "docid", "rank", "page", "url"),
     "resultExposureEnded": ("query", "docid", "rank", "page", "url", "durationMs", "exitReason"),
     "TaskEnded": ("answer",),
+    "rewardShown": ("piecesEarned", "totalTasks"),
+    "resourceViewStarted": ("url", "windowLocation"),
+    "resourceViewEnded": ("url", "windowLocation", "dwellTimeMs", "exitReason"),
+    "iframeNavigation": ("fromUrl", "toUrl", "windowLocation"),
+    "iframeBackNavigation": ("fromUrl", "toUrl", "windowLocation"),
+    "iframeNavigationTrackingLimited": ("reason", "url", "windowLocation"),
+    "browserBackBlocked": ("url", "pathname"),
 }
 
 PILOT_CHECKLIST = """
@@ -49,6 +57,7 @@ Manual pilot checklist:
 - Paginate forward/back, confirm pageNavigationClicked.toPage is numeric and targetURL is present.
 - Click a resource and return, confirm wentBack.returnType is resource-to-serp.
 - Paginate between SERPs, confirm wentBack.returnType is serp-to-serp.
+- Press native browser Back, confirm browserBackBlocked appears and the current page stays in place.
 - End from a resource page, confirm webpageClosed appears before TaskEnded.
 - Scroll the SERP, confirm resultExposureStarted/resultExposureEnded are paired and durations are plausible.
 - Try a no-result query, confirm searchNoResults has query/rawQuery/sanitizedQuery.
@@ -91,6 +100,7 @@ def check_events(path, events):
     previous_query_submit = None
     open_webpages = defaultdict(list)
     open_exposures = {}
+    open_resource_views = []
 
     for event in events:
         line_number = event["_line"]
@@ -100,7 +110,7 @@ def check_events(path, events):
         if not timestamp or not TIMESTAMP_RE.fullmatch(str(timestamp)):
             warn(warnings, path, line_number, f"bad timestamp format: {timestamp!r}")
         elif str(timestamp).endswith("Z"):
-            warn(warnings, path, line_number, "timestamp is UTC-style Z, expected local offset")
+            warn(warnings, path, line_number, "timestamp is UTC-style Z, expected local timestamp")
 
         for field in REQUIRED_FIELDS.get(event_type, ()):
             if field not in event or event.get(field) is None:
@@ -133,6 +143,16 @@ def check_events(path, events):
             if not isinstance(event.get("durationMs"), (int, float)):
                 warn(warnings, path, line_number, "webpageClosed.durationMs is not numeric")
 
+        if event_type == "resourceViewStarted":
+            open_resource_views.append(event)
+        elif event_type == "resourceViewEnded":
+            if not open_resource_views:
+                warn(warnings, path, line_number, "resourceViewEnded without matching resourceViewStarted")
+            else:
+                open_resource_views.pop()
+            if not isinstance(event.get("dwellTimeMs"), (int, float)):
+                warn(warnings, path, line_number, "resourceViewEnded.dwellTimeMs is not numeric")
+
         if event_type == "resultExposureStarted":
             key = event_key(event, "task_number", "query", "page", "rank", "url")
             if key in open_exposures:
@@ -158,6 +178,14 @@ def check_events(path, events):
             event["_line"],
             "resultExposureStarted not ended "
             f"for page={event.get('page')!r} rank={event.get('rank')!r}",
+        )
+
+    for event in open_resource_views:
+        warn(
+            warnings,
+            path,
+            event["_line"],
+            f"resourceViewStarted not ended for url={event.get('url')!r}",
         )
 
     return warnings

@@ -10,18 +10,15 @@
         <h1 class="task-number">#{{ task_number }}</h1>
 
         {% if task_number == 1 %}
-        <p>State per iniziare una nuova ricerca.</p>
-        <p>Ci sono tante cose da scoprire: leggete bene la domanda e usate il motore di ricerca.</p>
+        <p>Provate a rispondere alla domanda:</p>
         {% elif task_number == 2 %}
         <p>La prima domanda era facile, ma ora aumentiamo la difficoltà.</p>
         {% else %}
-        <p>Ormai siete ricercatrici e ricercatori nati, siamo all'ultima domanda.</p>
-        <p>Se troverete la risposta a questa domanda, avrete finito il gioco e potrete scoprire l'ultimo pezzo mancante.</p>
+        <p>Siete arrivati all'ultima domanda.</p>
         {% endif %}
 
-        <p class="task-instruction">Usate il motore di ricerca per trovare la risposta a questa domanda:</p>
         <p class="task-question">{{ topic }}</p>
-        <p>Scrivete la vostra risposta per sbloccare la domanda successiva!</p>
+        <p>Usate il motore di ricerca per trovare le informazioni.</p>
 
         <div id="task-wrapper"
              data-user-id="{{ user_id }}"
@@ -31,7 +28,7 @@
 
         <div class="task-action">
             <form action="{{ url_for('search_page') }}" method="get">
-                <button id="task-btn" type="submit" class="app-btn app-btn-primary">Inizia</button>
+                <button id="task-btn" type="submit" class="app-btn app-btn-primary">Entra nel motore di ricerca</button>
             </form>
         </div>
     </div>

@@ -1,0 +1,228 @@
+[
+
+//resources for jupiter's moons. (Question: Come si chiamano i satelliti maggiori di Giove?)
+
+    {
+        "docno": "1",
+        "title": "Satelliti medicei",
+        "snippet": "I satelliti medicei o satelliti galileiani, sono i quattro satelliti maggiori del pianeta Giove.",
+        "url": "https://www.focus.it/scienza/spazio/avvistati-i-satelliti-di-giove",
+        "source": "satelliti; giove"
+    },
+    {
+        "docno": "2",
+        "title": "Guida ai piu grandi satelliti di Giove",
+        "snippet": "Primo dei pianeti giganti e re del Sistema Solare esterno: con le sue lune, le sue nubi, e i suoi vortici, Giove incarna il fascino dello spazio profondo",
+        "url": "https://www.cronachedalsilenzio.it/2017/10/24/guida-ai-piu-grandi-satelliti-di-giove/",
+        "source": "satelliti; giove"
+    },
+    {
+        "docno": "3",
+        "title": "Sistema Solare: i pianeti gassosi",
+        "snippet": "Il quinto pianeta in ordine di distanza dal Sole è così grande che potrebbe facilmente inghiottire 1300 Terre, o occupare quasi la metà dello Spazio che separa la Terra dalla Luna. ",
+        "url": "https://www.focusjunior.it/scienza/sistema-solare-i-pianeti-gassosi/",
+        "source": "satelliti; giove"
+    },
+    {
+        "docno": "4",
+        "title": "L'atmosfera di Io, satellite di Giove",
+        "snippet": "L'atmosfera di Io, prodotta da un'intensa attività vulcanica, collassa e si espande al ritmo regolare della sua orbita attorno a Giove",
+        "url": "https://www.focus.it/scienza/spazio/atmosfera-di-io-satellite-di-giove",
+        "source": "satelliti; giove"
+    },
+    {
+        "docno": "5",
+        "title": "Giove",
+        "snippet": "Oltre la fascia di asteroidi troviamo Giove, il quinto pianeta partendo dal Sole. Tutto quello che riguarda Giove è enorme.",
+        "url": "https://www.esa.int/kids/it/imparare/L_Universo/Pianeti_e_satelliti/Giove",
+        "source": "satelliti; giove"
+    },
+    {
+        "docno": "6",
+        "title": "Io e le altre lune di giove",
+        "snippet": "Giove possiede un elevato numero di satelliti naturali, al 2024 quantificato in 95 che lo rendono il pianeta del sistema solare con il secondo più grande corteo di satelliti con orbite ragionevolmente sicure.",
+        "url": "https://pwg.gsfc.nasa.gov/stargaze/Iiomoons.htm",
+        "source": "satelliti; giove"
+    },
+    {
+        "docno": "7",
+        "title": "Giove e i suoi satelliti",
+        "snippet": "Il pianeta è composto principalmente da idrogeno ed elio ed è classificato come gigante gassoso.",
+        "url": "https://edu.inaf.it/astrofoto/giove-satelliti-roberto-ortu/",
+        "source": "satelliti; giove"
+    },
+    {
+        "docno": "8",
+        "title": "Viaggio nel sistema solare: le lune di Giove",
+        "snippet": "Nella nostra esplorazione iniziamo ora a conoscere le prime quattro, dette lune galileiane, perché scoperte inizialmente da Galileo Galilei. ",
+        "url": "https://www.ocean4future.org/savetheocean/archives/37136",
+        "source": "satelliti; giove"
+    },
+    {
+        "docno": "9",
+        "title": "I satelliti medicei",
+        "snippet": "Osservando Giove, Galilei si accorse che intorno al pianeta vi erano quattro piccoli astri che sembravano ruotargli attorno, così come la Luna fa con la Terra. ",
+        "url": "https://www.astrofilipc.it/portfolio/i-satelliti-medicei-di-giove/",
+        "source": "satelliti; giove"
+    },
+    {
+        "docno": "10",
+        "title": "Satelliti di Giove",
+        "snippet": "",
+        "url": "https://www.astronomitaly.com/blog/astronomy-pictures-and-news/io-europa-ganimede-e-callisto-guida-ai-4-satelliti-di-giove-che-hanno-ispirato-galileo-galilei",
+        "source": "satelliti; giove"
+    },
+
+//resources for first animal in space. (Question: Qual è stato il primo animale nello spazio e come si chiamava?)
+
+    {
+        "docno": "11",
+        "title": "Laika, la prima nello spazio",
+        "snippet": "",
+        "url": "https://www.rsi.ch/info/natura-e-animali/Laika-la-prima-nello-spazio--1779671.html",
+        "source": "animale; spazio"
+    },
+    {
+        "docno": "11",
+        "title": "Chi fu il primo animale a volare nello spazio?",
+        "snippet": "",
+        "url": "https://www.sapere.it/sapere/strumenti/domande-risposte/storia-civilta/primo-animale-nello-spazio.html",
+        "source": ""
+    },
+    {
+        "docno": "12",
+        "title": "Laika, il primo animale nello spazio",
+        "snippet": "",
+        "url": "https://www.storicang.it/foto-del-giorno/laika-il-primo-animale-nello-spazio_15816",
+        "source": ""
+    },
+    {
+        "docno": "13,
+        "title": "Spazio La storia dimenticata di Félicette, il primo gatto nello Spazio",
+        "snippet": "",
+        "url": "https://www.focus.it/scienza/spazio/la-storia-dimenticata-di-felicette-il-primo-gatto-nello-spazio",
+        "source": ""
+    },
+    {
+        "docno": "14",
+        "title": "Laika e gli altri animali astronauti",
+        "snippet": "",
+        "url": "https://www.animalidacompagnia.it/laika-e-gli-altri-animali-astronauti/",
+        "source": ""
+    },
+    {
+        "docno": "15",
+        "title": "Verso le stelle: 66 anni fa la cagnetta Laika veniva spedita nello spazio",
+        "snippet": "",
+        "url": "",
+        "source": "https://www.focusjunior.it/scienza/spazio/laika-la-cagnetta-spedita-nello-spazio/"
+    },
+    {
+        "docno": "16",
+        "title": "8 cani che sono stati pionieri nello spazio",
+        "snippet": "",
+        "url": "https://www.mille-animali.com/animali/elenchi-speciali/cani/8-cani-che-sono-stati-pionieri-nello-spazio.php",
+        "source": ""
+    },
+    {
+        "docno": "17",
+        "title": "laika nello spazio",
+        "snippet": "",
+        "url": "https://www.ansa.it/canale_scienza/notizie/spazio_astronomia/2017/11/02/60-anni-fa-il-volo-di-laika-primo-essere-vivente-nello-spazio_46390944-5fd9-4bb2-93b9-d8b3f4243999.html",
+        "source": ""
+    },
+    {
+        "docno": "18",
+        "title": "animali nello spazio",
+        "snippet": "",
+        "url": "https://www.nationalgeographic.it/spazio/2021/08/animali-e-uomini-nello-spazio-le-foto-che-hanno-fatto-la-storia",
+        "source": ""
+    },
+    {
+        "docno": "19",
+        "title": "",
+        "snippet": "",
+        "url": "https://www.esquire.com/it/lifestyle/tecnologia/a36978438/animali-astronauti-marte/",
+        "source": ""
+    },
+    {
+        "docno": "20",
+        "title": "animali nello spazio",
+        "snippet": "",
+        "url": "https://yury.it/laika-tartarughe-animali-nello-spazio-prima-dopo-gagarin/",
+        "source": ""
+    },
+//resources for galaxies (Question: Quali sono i nomi di altre 3 galassie oltre la nostra?)
+    
+    {
+        "docno": "21",
+        "title": "",
+        "snippet": "",
+        "url": "https://123stella.astronomiamo.it/Fase.aspx?Arg=Cosa_sono_le_galassie",
+        "source": ""
+    },
+    {
+        "docno": "22",
+        "title": "",
+        "snippet": "",
+        "url": "https://www.latorredelsole.it/2025/09/05/m-31-galassia-di-andromeda/",
+        "source": ""
+    },
+    {
+        "docno": "23",
+        "title": "",
+        "snippet": "",
+        "url": "",
+        "source": https://scienzenaturali.ch/astronomy-explained/celestial_bodies/galaxies"
+    },
+    {
+        "docno": "24",
+        "title": "",
+        "snippet": "",
+        "url": "",
+        "source": "https://www.media.inaf.it/2013/04/04/smc-wing-chandra/"
+    },
+    {
+        "docno": "25",
+        "title": "",
+        "snippet": "",
+        "url": "",
+        "source": "https://eagle-sera.webnode.it/le-galassie/"
+    },
+    {
+        "docno": "26",
+        "title": "",
+        "snippet": "",
+        "url": "",
+        "source": "https://www.focus.it/scienza/spazio/hubble-nel-cuore-della-galassia-del-triangolo"
+    },
+    {
+        "docno": "27",
+        "title": "Galassie del gruppo locale",
+        "snippet": "",
+        "url": "",
+        "source": "https://www.castfvg.it/galassie/gruppo_locale/gruppo_locale.htm"
+    },
+    {
+        "docno": "28",
+        "title": "",
+        "snippet": "",
+        "url": "",
+        "source": "https://www.astrofilipc.it/portfolio/m33-galassia-triangolo/"
+    },
+    {
+        "docno": "29",
+        "title": "",
+        "snippet": "",
+        "url": "",
+        "source": "https://www.castfvg.it/zzz/ids/lmc.html"
+    },
+    {
+        "docno": "30",
+        "title": "",
+        "snippet": "",
+        "url": "",
+        "source": "https://astroscopehub.com/nomi-di-galassie/"
+    }
+
+]
