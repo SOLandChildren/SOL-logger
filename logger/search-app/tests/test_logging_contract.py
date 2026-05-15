@@ -163,7 +163,10 @@ def test_log_session_warns_only_for_expected_logging_contract_issues():
     assert 'return jsonify({"error": "User mismatch"}), 409' in source
     assert "duplicate consecutive querySubmitted" in source
     assert "pageNavigationClicked has null toPage" in source
-    assert "wentBack missing fields" in source
+    assert "missing navigation fields" in source
+    assert "browserBackBlocked" in source
+    assert "customBackButtonClicked" in source
+    assert "wentBack missing fields" not in source
     assert "SERP event missing query fields" in source
     assert "('url', 'durationMs', 'exitReason')" in source
     assert "[Logging WARN] webpageClosed missing fields" in source
@@ -279,7 +282,7 @@ def test_italian_pagination_target_parsing():
     assert parsed == {"previous": 1, "next": 3, "numeric": 3, "href": 4}
 
 
-def test_went_back_return_metadata_contract():
+def test_back_navigation_return_metadata_contract():
     result = run_logger_node_script("""
         const internals = window.__SOLLoggerInternals;
         console.log(JSON.stringify({
@@ -299,6 +302,21 @@ def test_went_back_return_metadata_contract():
     assert parsed["resource"]["fromPageType"] == "webpage"
     assert parsed["resource"]["toPageType"] == "serp"
     assert parsed["serp"]["returnType"] == "serp-to-serp"
+
+
+def test_back_navigation_events_include_destination_urls():
+    logger_source = LOGGER_JS.read_text(encoding="utf-8")
+    checker_source = CHECK_LOGS.read_text(encoding="utf-8")
+
+    assert 'studyLogger.logEvent("wentBack"' not in logger_source
+    assert "const toURL = targetURL || fromURL" in logger_source
+    assert "fromURL," in logger_source
+    assert "toURL," in logger_source
+    assert "getBackButtonNavigationDetails(serpBackBtn, \"serp\")" in logger_source
+    assert "getBackButtonNavigationDetails(viewerBackBtn, \"webpage\")" in logger_source
+    assert '"customBackButtonClicked": ("fromURL", "toURL")' in checker_source
+    assert '"browserBackBlocked": ("url", "pathname", "fromURL", "toURL")' in checker_source
+    assert '"wentBack":' not in checker_source
 
 
 def test_raw_and_sanitized_query_fields_on_serp_contract():
@@ -362,6 +380,7 @@ def test_offline_checker_contains_checks_and_manual_checklist():
     assert "pageNavigationClicked.toPage is null" in source
     assert "webpageOpened not closed" in source
     assert "resultExposureStarted not ended" in source
+    assert "wentBack" not in source
 
 
 if __name__ == "__main__":
@@ -378,7 +397,8 @@ if __name__ == "__main__":
         test_client_cleanup_clears_local_session_and_in_memory_logger_state,
         test_duplicate_query_submit_suppression_contract,
         test_italian_pagination_target_parsing,
-        test_went_back_return_metadata_contract,
+        test_back_navigation_return_metadata_contract,
+        test_back_navigation_events_include_destination_urls,
         test_raw_and_sanitized_query_fields_on_serp_contract,
         test_result_exposure_logging_contract,
         test_autocomplete_and_no_results_logging_contract,

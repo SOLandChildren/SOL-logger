@@ -260,9 +260,13 @@ function buildBrowserBackBlockerHistoryState(extraState = {}) {
 
 function logNativeBrowserBackBlocked(reason, targetURL = null) {
     if (!window.studyLogger) return;
+    const fromURL = getCurrentWindowUrl();
+    const toURL = targetURL || fromURL;
     window.studyLogger.logEvent("browserBackBlocked", {
-        url: getCurrentWindowUrl(),
+        url: fromURL,
         pathname: getCurrentWindowPathname(),
+        fromURL,
+        toURL,
         reason,
         targetURL,
         navigationType: getPageNavigationType()
@@ -543,6 +547,20 @@ function getReturnMetadata(fromURL, toURL) {
     return { fromPageType, toPageType, returnType };
 }
 
+function getBackButtonNavigationDetails(button, fallbackFromPageType) {
+    const fromURL = window.location.href;
+    const toURL = button?.href || button?.getAttribute?.("href") || "";
+    const metadata = getReturnMetadata(fromURL, toURL);
+
+    return {
+        ...metadata,
+        fromPageType: fallbackFromPageType || metadata.fromPageType,
+        url: fromURL,
+        fromURL,
+        toURL
+    };
+}
+
 function getTargetPage(label, current, link = null) {
     const href = link?.href || link?.getAttribute?.("href") || "";
     if (href) {
@@ -719,14 +737,6 @@ function logSERP() {
     const fromURL = studyLogger.checkHistory(searchAppLocation);
 
     if(fromURL){
-        studyLogger.logEvent("wentBack", {
-            "query": query,
-            rawQuery,
-            sanitizedQuery,
-            "fromURL": fromURL,
-            "toURL": searchAppLocation,
-            ...getReturnMetadata(fromURL, searchAppLocation),
-        });
         studyLogger.removeHistory();
         studyLogger.addHistory(searchAppLocation);
     }
@@ -947,20 +957,20 @@ if (endno) {
 const serpBackBtn = document.getElementById("serp-back-btn");
 if (serpBackBtn) {
     serpBackBtn.addEventListener("click", () => {
-        studyLogger.logEvent("customBackButtonClicked", {
-            fromPageType: "serp",
-            url: window.location.href
-        });
+        studyLogger.logEvent(
+            "customBackButtonClicked",
+            getBackButtonNavigationDetails(serpBackBtn, "serp")
+        );
     });
 }
 
 const viewerBackBtn = document.getElementById("viewer-back-btn");
 if (viewerBackBtn) {
     viewerBackBtn.addEventListener("click", () => {
-        studyLogger.logEvent("customBackButtonClicked", {
-            fromPageType: "webpage",
-            url: window.location.href
-        });
+        studyLogger.logEvent(
+            "customBackButtonClicked",
+            getBackButtonNavigationDetails(viewerBackBtn, "webpage")
+        );
     });
 }
 

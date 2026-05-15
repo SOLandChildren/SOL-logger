@@ -60,7 +60,6 @@ SERP_QUERY_FIELD_EVENTS = {
     'resultExposureStarted',
     'resultExposureEnded',
     'searchNoResults',
-    'wentBack',
     'generatedDidYouMean',
     'hoverOverDidYouMean',
     'clickedDidYouMeanSuggestion',
@@ -747,14 +746,14 @@ def warn_logging_contract_issues(logs, default_task_number):
                 f"at log entry {index}: {entry}"
             )
 
-        if event_type == 'wentBack':
+        if event_type in ('browserBackBlocked', 'customBackButtonClicked'):
             missing_fields = [
-                field for field in ('fromURL', 'toURL', 'returnType')
+                field for field in ('fromURL', 'toURL')
                 if not entry.get(field)
             ]
             if missing_fields:
                 print(
-                    "[Logging WARN] wentBack missing fields "
+                    f"[Logging WARN] {event_type} missing navigation fields "
                     f"{missing_fields} at log entry {index}: {entry}"
                 )
 
