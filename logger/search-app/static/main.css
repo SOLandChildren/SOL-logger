@@ -1175,25 +1175,8 @@ textarea:focus {
     border-radius: 22px;
   }
 
-  .search-panel,
-  .id-panel,
-  .task-panel,
-  .error-panel {
-    align-items: center;
-    justify-content: flex-start;
-    padding-top: clamp(42px, 11vh, 90px);
-  }
-
   .serp-panel {
     padding-top: clamp(34px, 7vh, 64px);
-  }
-
-  .home-search-center,
-  .id-form-wrap,
-  .task-container,
-  .error-container {
-    margin-top: 0;
-    margin-bottom: 0;
   }
 
   .reward-page {
@@ -1485,6 +1468,26 @@ textarea:focus {
   border-radius: 0;
   background: rgba(255, 255, 255, 0.96);
   z-index: 9999;
+}
+
+/* Tablet safety net: keep centered landing/id/task panels centered.
+   The reward page has its own tablet layout above. */
+@media (hover: none) and (pointer: coarse) and (min-width: 641px) {
+  .search-panel,
+  .id-panel,
+  .task-panel,
+  .error-panel {
+    align-items: center;
+    justify-content: center;
+  }
+
+  .home-search-center,
+  .id-form-wrap,
+  .task-container,
+  .error-container {
+    margin: auto;
+    transform: none;
+  }
 }
 
 /* Touch-device compact modal: shrink content so the iOS keyboard doesn't
