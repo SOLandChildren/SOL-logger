@@ -1,37 +1,59 @@
 services:
   search_app:
     build: ./search-app
-    depends_on:
-      - search_engine
+    init: true
     ports:
-      - 7001:7001
+      - "${HOST_BIND:-0.0.0.0}:${APP_PORT:-7001}:7001"
     volumes:
-      - ./search-app/templates/:/app/templates/   # ← Transferring HTML files
-      - ./search-app/static/:/app/static/   # ← Mount the static folder here
-      - ./search-app/data/:/data/
-      - ./logs:/logs/
-      - ./search-app/API_keys.json:/API_keys.json
-      - ./search-app/service_account.json:/service_account.json
+      - ./search-app/data:/app/data:ro
+      - ./logs:/app/logs
+      - ${API_KEYS_FILE:-./search-app/API_keys.json}:/app/API_keys.json:ro
+      - ${GOOGLE_SERVICE_ACCOUNT_FILE:-./search-app/service_account.json}:/app/service_account.json:ro
     environment:
-      SEARCH_BACKEND: "vertex"  # ← Set the environment variable to "bm25" or "vertex" to change between search engines 
-      GOOGLE_APPLICATION_CREDENTIALS: "/service_account.json"
-      PYTHONUNBUFFERED: "1"
+      SEARCH_BACKEND: "${SEARCH_BACKEND:-vertex}"
+      GOOGLE_APPLICATION_CREDENTIALS: "${GOOGLE_APPLICATION_CREDENTIALS:-/app/service_account.json}"
+      FLASK_DEBUG: "${FLASK_DEBUG:-0}"
+      FLASK_SECRET_KEY: "${FLASK_SECRET_KEY:-}"
+      VERTEX_PROJECT_NUMBER: "${VERTEX_PROJECT_NUMBER:-}"
+      VERTEX_LOCATION: "${VERTEX_LOCATION:-global}"
+      VERTEX_ENGINE_ID: "${VERTEX_ENGINE_ID:-}"
+      VERTEX_DATA_STORE_ID: "${VERTEX_DATA_STORE_ID:-}"
+      VERTEX_LANGUAGE_CODE: "${VERTEX_LANGUAGE_CODE:-it}"
+      VERTEX_AUTOCOMPLETE_QUERY_MODEL: "${VERTEX_AUTOCOMPLETE_QUERY_MODEL:-search-history}"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:7001/welcome >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
     networks:
       - frontend
+    restart: unless-stopped
 
-
+  # Local PyTerrier/BM25 backend. Off by default — only starts when the
+  # `pyterrier` profile is activated:
+  #   docker compose --profile pyterrier up --build
+  # On the USI server we run Vertex-only, so this never starts there.
   search_engine:
+    profiles: ["pyterrier"]
     build: ./search-engine
+    expose:
+      - "7002"
     volumes:
-      - ./search-engine/index:/index/
+      - ./search-engine/index:/app/index
     tty: true
     environment:
       WMODEL: BM25
-    ports:
-      - 7002:7002
-
     networks:
       - frontend
+    restart: unless-stopped
 
 networks:
   frontend:

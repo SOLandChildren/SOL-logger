@@ -603,7 +603,7 @@ a:hover {
   overflow: hidden;
 }
 
-.reward-unlock-panel {
+.reward-panel {
   width: 100%;
   height: min(820px, calc(100vh - 80px));
   height: min(820px, calc(100dvh - 80px));
@@ -611,7 +611,7 @@ a:hover {
   max-height: calc(100dvh - 80px);
   min-height: 0;
   padding: 0 clamp(30px, 6vw, 72px) clamp(26px, 4vw, 48px);
-  border-radius: 20px;
+  border-radius: 24px;
   background: #fff;
   text-align: center;
   box-shadow: var(--shadow-soft);
@@ -962,6 +962,16 @@ a:hover {
   }
 }
 
+/* No results */
+.no-result-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 18px;
+}
+
 /* Error */
 .error-panel {
   display: flex;
@@ -1080,7 +1090,7 @@ textarea:focus {
   .app-page,
   .reward-page {
     width: min(100vw - 28px, 100%);
-    padding-top: 18px;
+    padding-top: 12px;
   }
 
   .completion-page,
@@ -1117,7 +1127,7 @@ textarea:focus {
     padding-bottom: 18px;
   }
 
-  .reward-unlock-panel {
+  .reward-panel {
     height: min(820px, calc(100vh - 36px));
     height: min(820px, calc(100dvh - 36px));
     max-height: calc(100vh - 36px);
@@ -1165,25 +1175,8 @@ textarea:focus {
     border-radius: 22px;
   }
 
-  .search-panel,
-  .id-panel,
-  .task-panel,
-  .error-panel {
-    align-items: center;
-    justify-content: flex-start;
-    padding-top: clamp(42px, 11vh, 90px);
-  }
-
   .serp-panel {
     padding-top: clamp(34px, 7vh, 64px);
-  }
-
-  .home-search-center,
-  .id-form-wrap,
-  .task-container,
-  .error-container {
-    margin-top: 0;
-    margin-bottom: 0;
   }
 
   .reward-page {
@@ -1241,7 +1234,7 @@ textarea:focus {
     width: 100%;
   }
 
-  .reward-unlock-panel {
+  .reward-panel {
     padding: 0 18px 24px;
     gap: 12px;
   }
@@ -1347,4 +1340,175 @@ textarea:focus {
 /* Optional: smooth fade */
 #query-suggestions {
   transition: opacity 120ms ease-in-out;
+}
+
+/* iPad portrait & similar tablets — lift the white box and tighten padding.
+   Fixes the "search box too low" issue on 768–1024px viewports. */
+@media (min-width: 641px) and (max-width: 1024px) {
+  .app-page,
+  .reward-page {
+    padding-top: 12px;
+    padding-bottom: 24px;
+  }
+
+  .app-toolbar {
+    min-height: 48px;
+    margin-bottom: 6px;
+  }
+
+  .app-panel {
+    padding: 24px 28px;
+    border-radius: 20px;
+  }
+
+  /* Home: keep the panel tall so `.home-search-center { margin: auto }`
+     can vertically center the search bar inside it (Google-style).
+     SERP uses `.serp-panel`, not `.search-panel`, so it stays top-aligned. */
+
+  .serp-search-wrap {
+    margin: 0 auto;
+  }
+
+  .home-search-title,
+  .serp-search-title {
+    margin-bottom: 18px;
+    font-size: clamp(2rem, 5.5vw, 3rem);
+  }
+
+  .webpage-panel {
+    padding: 12px;
+  }
+
+  #webpage-frame {
+    height: calc(100vh - 130px);
+    min-height: 0;
+  }
+}
+
+/* iPad landscape — short viewport on wider screens. Trims desktop padding
+   without affecting standard laptops/monitors (max-height clause). */
+@media (min-width: 1025px) and (max-height: 900px) {
+  .app-page,
+  .reward-page {
+    padding-top: 16px;
+    padding-bottom: 28px;
+  }
+
+  .app-panel {
+    padding: 28px 48px;
+  }
+
+  /* Same intent as the portrait rule: keep the home panel tall so the
+     search bar can vertically center. SERP top-aligns via `.serp-search-wrap`. */
+
+  .serp-search-wrap {
+    margin: 0 auto;
+  }
+
+  #webpage-frame {
+    height: calc(100vh - 140px);
+    min-height: 0;
+  }
+}
+
+/* Child-friendly loading overlay. Covers its nearest positioned ancestor;
+   ancestors that need to host the overlay are given `position: relative` below. */
+.sol-loader {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: rgba(255, 255, 255, 0.94);
+  border-radius: inherit;
+  z-index: 20;
+  transition: opacity 220ms ease;
+  pointer-events: none;
+}
+
+.sol-loader.is-pending {
+  opacity: 0;
+}
+
+.sol-loader.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.sol-loader__spinner {
+  width: 72px;
+  height: 72px;
+  border: 6px solid #e5e7eb;
+  border-top-color: var(--sol-blue);
+  border-radius: 50%;
+  animation: sol-loader-spin 0.9s linear infinite;
+}
+
+.sol-loader__text {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-main);
+  letter-spacing: 0.02em;
+}
+
+@keyframes sol-loader-spin {
+  to { transform: rotate(360deg); }
+}
+
+.webpage-panel,
+.reward-media-stage,
+.final-reward-stage {
+  position: relative;
+}
+
+.sol-loader--fixed {
+  position: fixed;
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.96);
+  z-index: 9999;
+}
+
+/* Tablet safety net: keep centered landing/id/task panels centered.
+   The reward page has its own tablet layout above. */
+@media (hover: none) and (pointer: coarse) and (min-width: 641px) {
+  .search-panel,
+  .id-panel,
+  .task-panel,
+  .error-panel {
+    align-items: center;
+    justify-content: center;
+  }
+
+  .home-search-center,
+  .id-form-wrap,
+  .task-container,
+  .error-container {
+    margin: auto;
+    transform: none;
+  }
+}
+
+/* Touch-device compact modal: shrink content so the iOS keyboard doesn't
+   cover the action buttons. Activates on iPad/iPhone/Android tablets. */
+@media (hover: none) and (pointer: coarse) {
+  .modal-content-box {
+    min-height: 0;
+    padding: 22px;
+  }
+
+  .modal-content-box h2 {
+    margin-bottom: 10px;
+    font-size: 1.3rem;
+  }
+
+  #feedbackModal textarea {
+    min-height: 80px;
+  }
+
+  .modal-buttons {
+    margin-top: 16px;
+    gap: 10px;
+  }
 }

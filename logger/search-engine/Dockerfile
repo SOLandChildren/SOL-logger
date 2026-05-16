@@ -6,15 +6,13 @@ ENV PIP_NO_CACHE_DIR=1
 ENV CC=gcc
 ENV CXX=g++
 
-WORKDIR /
+WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     git \
     ca-certificates \
     build-essential \
-    gcc \
-    g++ \
     default-jdk \
     zlib1g-dev \
     libffi-dev \
@@ -28,5 +26,7 @@ RUN python -m pip install --upgrade pip setuptools wheel && \
     python -m pip install --upgrade git+https://github.com/terrierteam/pyterrier_t5.git
 
 COPY . .
+
+EXPOSE 7002
 
 CMD ["python", "app.py"]

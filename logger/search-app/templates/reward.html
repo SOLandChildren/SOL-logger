@@ -2,8 +2,9 @@
 {% block title %}Pezzo sbloccato{% endblock %}
 {% block content %}
 
-<div class="reward-page">
-    <div class="reward-unlock-panel">
+<div class="app-page reward-page">
+    <div class="app-toolbar"></div>
+    <section class="app-panel reward-panel">
         <div class="reward-copy">
             <h2>Avete sbloccato {% if is_last %}l'{{ unlocked_piece.label }}{% else %}il {{ unlocked_piece.label }}{% endif %} pezzo del puzzle!</h2>
         </div>
@@ -11,7 +12,12 @@
         <div class="reward-media-stage">
             <img src="{{ url_for('static', filename=unlocked_piece.static_filename) }}"
                  alt="Pezzo puzzle {{ unlocked_piece.task_num }}"
-                 class="unlocked-piece-img">
+                 class="unlocked-piece-img"
+                 id="reward-piece-img">
+            <div class="sol-loader is-pending" id="reward-loader" aria-live="polite">
+                <div class="sol-loader__spinner" aria-hidden="true"></div>
+                <div class="sol-loader__text">Caricamento…</div>
+            </div>
         </div>
 
         <div class="reward-actions">
@@ -27,6 +33,33 @@
         </a>
         {% endif %}
         </div>
-    </div>
+    </section>
 </div>
+
+<script>
+(function() {
+    const img = document.getElementById("reward-piece-img");
+    const loader = document.getElementById("reward-loader");
+    if (!img || !loader) return;
+
+    let shown = false;
+    const timer = window.setTimeout(() => {
+        loader.classList.remove("is-pending");
+        shown = true;
+    }, 250);
+
+    function hide() {
+        window.clearTimeout(timer);
+        loader.classList.add("is-hidden");
+        if (!shown) loader.classList.add("is-pending");
+    }
+
+    if (img.complete && img.naturalWidth > 0) {
+        hide();
+    } else {
+        img.addEventListener("load", hide, { once: true });
+        img.addEventListener("error", hide, { once: true });
+    }
+})();
+</script>
 {% endblock %}
