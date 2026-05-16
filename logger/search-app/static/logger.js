@@ -190,7 +190,21 @@
                 localStorage.removeItem('browserHistory');
                 this.logs = [];
                 this.historyTracker = [];
-                return response;
+                // The server may have recovered events left behind by a
+                // previous, unfinished participant and saved them as an
+                // incomplete experiment. Surface that to the operator.
+                return response.json().catch(() => ({})).then(data => {
+                    const recovered = data && data.recovered_incomplete;
+                    if (recovered && typeof recovered === 'object'
+                        && Object.keys(recovered).length > 0
+                        && typeof window !== 'undefined'
+                        && typeof window.dispatchEvent === 'function') {
+                        window.dispatchEvent(new CustomEvent('sol:incomplete-recovered', {
+                            detail: { recovered }
+                        }));
+                    }
+                    return response;
+                });
             });
         }
     };

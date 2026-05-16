@@ -580,6 +580,54 @@ def _append_log_registry(*, user_id, session_id, task_number, num_events,
         traceback.print_exc()
 
 
+def _write_incomplete_recovery(foreign_groups, recovered_from_user):
+    """Persist events left behind by a previous, unfinished participant.
+
+    ``foreign_groups`` maps (foreign_uid, client_session_id) -> list of that
+    participant's log entries that arrived mixed into another participant's
+    submission. Each group is appended to its own deterministic
+    ``<uid>_<sid>_INCOMPLETE.log`` file (so repeated recoveries accumulate
+    instead of spawning new files) and the file is closed with an
+    ``incompleteExperiment`` marker line. Returns a {uid: num_events} summary.
+    Never raises.
+    """
+    recovered_summary = {}
+    for (fuid, fsid), entries in foreign_groups.items():
+        try:
+            safe_fuid  = _sanitize_for_filename(fuid)
+            short_fsid = _sanitize_for_filename(fsid)[:8]
+            fname = f"{safe_fuid}_{short_fsid}_INCOMPLETE.log"
+            fpath = os.path.join(LOG_DIR, fname)
+            recovered_at = datetime.now(LOG_TIME_ZONE).isoformat(timespec='milliseconds')
+            with open(fpath, 'a', encoding='utf-8') as f:
+                for entry in entries:
+                    enriched = dict(entry)
+                    enriched['recovered']           = True
+                    enriched['recovered_from_user'] = recovered_from_user
+                    enriched['recovered_at']        = recovered_at
+                    f.write(json.dumps(enriched) + '\n')
+                f.write(json.dumps({
+                    "type": "incompleteExperiment",
+                    "uid": fuid,
+                    "sessionID": fsid,
+                    "recovered_from_user": recovered_from_user,
+                    "recovered_at": recovered_at,
+                }) + '\n')
+            print(
+                f"[log] RECOVER incomplete uid={fuid} session={fsid} "
+                f"events={len(entries)} file={fname} recovered_from={recovered_from_user}"
+            )
+            _append_log_registry(
+                user_id=fuid, session_id=fsid, task_number=None,
+                num_events=len(entries), saved_log_filename=fname,
+                status="incomplete", error=f"recovered-from:{recovered_from_user}",
+            )
+            recovered_summary[fuid] = recovered_summary.get(fuid, 0) + len(entries)
+        except Exception:
+            traceback.print_exc()
+    return recovered_summary
+
+
 @app.route('/log_session', methods=['POST'])
 def log_session():
     data = request.get_json(force=False, silent=True) or {}
@@ -613,22 +661,36 @@ def log_session():
         )
         return jsonify({"error": "Session mismatch"}), 409
 
-    mismatched_uids = [
-        entry.get('uid')
-        for entry in logs
-        if isinstance(entry, dict) and entry.get('uid') and entry.get('uid') != user_id
-    ]
-    if mismatched_uids:
-        print(
-            f"[log] REJECT user-mismatch server_user={user_id} "
-            f"log_uids={sorted(set(mismatched_uids))}"
-        )
-        _append_log_registry(
-            user_id=user_id, session_id=session_id, task_number=task_number,
-            num_events=num_events, saved_log_filename=None,
-            status="error", error="user-mismatch",
-        )
-        return jsonify({"error": "User mismatch"}), 409
+    # If events from a different participant (a previous, unfinished session on
+    # the same device) arrived mixed into this submission, never reject the
+    # batch — the old behaviour lost the real participant's data too. Keep the
+    # current participant's events (and uid-less / generic ones) for the normal
+    # log, and recover the other participant's events into their own
+    # incomplete-experiment log instead of discarding them.
+    own_logs = []
+    foreign_groups = {}
+    for entry in logs:
+        euid = entry.get('uid') if isinstance(entry, dict) else None
+        if euid and euid != user_id:
+            esid = entry.get('sessionID') or 'nosession'
+            foreign_groups.setdefault((euid, esid), []).append(entry)
+        else:
+            own_logs.append(entry)
+
+    recovered_incomplete = {}
+    if foreign_groups:
+        recovered_incomplete = _write_incomplete_recovery(foreign_groups, user_id)
+        logs = own_logs
+        num_events = len(logs)
+        if not logs:
+            # The whole batch belonged to a previous participant; it has been
+            # recovered. Return OK so the client clears its buffer and the
+            # study can proceed.
+            return jsonify({
+                "status": "logged",
+                "saved_events": 0,
+                "recovered_incomplete": recovered_incomplete,
+            }), 200
 
     warn_logging_contract_issues(logs, task_number)
 
@@ -698,6 +760,7 @@ def log_session():
         "status":        "logged",
         "combined_file": combined_filename,
         "task_file":     task_filename,
+        "recovered_incomplete": recovered_incomplete,
     }), 200
 
 def warn_logging_contract_issues(logs, default_task_number):

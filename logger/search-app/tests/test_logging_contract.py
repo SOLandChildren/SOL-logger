@@ -159,8 +159,20 @@ def test_log_session_warns_only_for_expected_logging_contract_issues():
     assert "warn_logging_contract_issues(logs, task_number)" in source
     assert "if session_id != server_session_id:" in source
     assert 'return jsonify({"error": "Session mismatch"}), 409' in source
-    assert "mismatched_uids = [" in source
-    assert 'return jsonify({"error": "User mismatch"}), 409' in source
+    # Events from a previous, unfinished participant are recovered into their
+    # own incomplete-experiment log, never dropped and never rejected.
+    assert "def _write_incomplete_recovery(foreign_groups, recovered_from_user):" in source
+    assert '"type": "incompleteExperiment"' in source
+    assert "_INCOMPLETE.log" in source
+    assert "[log] RECOVER incomplete" in source
+    assert 'status="incomplete"' in source
+    assert '"recovered_incomplete": recovered_incomplete' in source
+    # Neither the old all-or-nothing reject nor the interim "drop foreign" path
+    # may come back — both lost data.
+    assert "mismatched_uids = [" not in source
+    assert 'return jsonify({"error": "User mismatch"}), 409' not in source
+    assert "REJECT user-mismatch" not in source
+    assert "dropped-foreign-uids" not in source
     assert "duplicate consecutive querySubmitted" in source
     assert "pageNavigationClicked has null toPage" in source
     assert "missing navigation fields" in source

@@ -23,6 +23,21 @@
         <div class="sol-loader__text">Caricamento…</div>
     </div>
 
+    <!-- Operator-facing notice: shown only when the server recovered leftover
+         data from a previous, unfinished participant and saved it as an
+         incomplete experiment. -->
+    <output id="stale-data-notice" aria-live="polite" hidden
+         style="display:block;position:fixed;top:0;left:0;right:0;z-index:99999;
+                background:#8a4b00;color:#fff;font-size:14px;line-height:1.4;
+                padding:10px 44px 10px 16px;text-align:center;
+                box-shadow:0 2px 6px rgba(0,0,0,0.3);">
+        <span id="stale-data-notice-text">Dati di un partecipante precedente non terminato sono stati salvati come esperimento incompleto.</span>
+        <button type="button" id="stale-data-notice-close" aria-label="Chiudi"
+                style="position:absolute;top:50%;right:10px;transform:translateY(-50%);
+                       background:transparent;border:0;color:#fff;font-size:20px;
+                       line-height:1;cursor:pointer;padding:4px 8px;">&times;</button>
+    </output>
+
     <div id="endTaskModal" class="modal">
         <div class="modal-content-box">
             <span class="close" onclick="window._endTaskCloseReason='x-close'; closeEndTaskModal()">&times;</span>
@@ -566,6 +581,34 @@
         window.USER_ID = {{ session.get('user_id')|tojson }};
     </script>
     <script src="{{ url_for('static', filename='logger.js') }}"></script>
+
+    <script>
+    (function () {
+        // When studyLogger.sendLogs() gets a server response saying it recovered
+        // events from a previous, unfinished participant (saved as an incomplete
+        // experiment), make that visible to the operator.
+        const notice = document.getElementById('stale-data-notice');
+        if (!notice) return;
+        const closeBtn = document.getElementById('stale-data-notice-close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => { notice.hidden = true; });
+        }
+        window.addEventListener('sol:incomplete-recovered', (ev) => {
+            const recovered = ev && ev.detail && ev.detail.recovered;
+            if (!recovered || typeof recovered !== 'object') return;
+            const parts = Object.keys(recovered)
+                .map(uid => `${uid} (${recovered[uid]})`);
+            if (parts.length === 0) return;
+            const textEl = document.getElementById('stale-data-notice-text');
+            if (textEl) {
+                textEl.textContent =
+                    'Dati di un partecipante precedente non terminato sono stati '
+                    + 'salvati come esperimento incompleto: ' + parts.join(', ') + '.';
+            }
+            notice.hidden = false;
+        });
+    })();
+    </script>
 
     <script>
     (function() {
