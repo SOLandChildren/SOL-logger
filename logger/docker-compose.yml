@@ -20,6 +20,9 @@ services:
       VERTEX_DATA_STORE_ID: "${VERTEX_DATA_STORE_ID:-}"
       VERTEX_LANGUAGE_CODE: "${VERTEX_LANGUAGE_CODE:-it}"
       VERTEX_AUTOCOMPLETE_QUERY_MODEL: "${VERTEX_AUTOCOMPLETE_QUERY_MODEL:-search-history}"
+      SERP_AUTOCOMPLETE_HL: "${SERP_AUTOCOMPLETE_HL:-it}"
+      SERP_AUTOCOMPLETE_GL: "${SERP_AUTOCOMPLETE_GL:-it}"
+      SERP_AUTOCOMPLETE_CLIENT: "${SERP_AUTOCOMPLETE_CLIENT:-gws-wiz}"  # default gws-wiz (google.com-style); override per host env
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:7001/welcome >/dev/null || exit 1"]
       interval: 30s
