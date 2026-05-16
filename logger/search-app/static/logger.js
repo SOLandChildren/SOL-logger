@@ -716,12 +716,45 @@ function logNoResults() {
     const noResults = document.querySelector("[data-log-no-results='true']");
     if (!noResults || noResults.dataset.logged === "true") return;
     noResults.dataset.logged = "true";
+
     studyLogger.logEvent("searchNoResults", {
         query: noResults.dataset.query || "",
         rawQuery: noResults.dataset.rawQuery || noResults.dataset.query || "",
         sanitizedQuery: noResults.dataset.sanitizedQuery || noResults.dataset.query || "",
         page: noResults.dataset.page || ""
     });
+
+    const didYouMean = document.getElementById("did-you-mean");
+    if(didYouMean){
+        console.log("Generated Did You Mean");
+        studyLogger.logEvent("generatedDidYouMean", {
+            query: noResults.dataset.query || "",
+            rawQuery: noResults.dataset.rawQuery || noResults.dataset.query || "",
+            sanitizedQuery: noResults.dataset.sanitizedQuery || noResults.dataset.query || "",
+            "suggested query": didYouMean.textContent,
+            "query_correction_model": didYouMean.getAttribute("source")
+        });
+
+        didYouMean.addEventListener("mouseenter", (e) => {
+            studyLogger.logEvent("hoverOverDidYouMean", {
+                query: noResults.dataset.query || "",
+                rawQuery: noResults.dataset.rawQuery || noResults.dataset.query || "",
+                sanitizedQuery: noResults.dataset.sanitizedQuery || noResults.dataset.query || "",
+                "suggested query": didYouMean.textContent,
+                "query_correction_model": didYouMean.getAttribute("source")
+            });
+        });
+
+        didYouMean.addEventListener("click", (e) => {
+            studyLogger.logEvent("clickedDidYouMeanSuggestion", {
+                query: noResults.dataset.query || "",
+                rawQuery: noResults.dataset.rawQuery || noResults.dataset.query || "",
+                sanitizedQuery: noResults.dataset.sanitizedQuery || noResults.dataset.query || "",
+                "suggested query": didYouMean.textContent,
+                "query_correction_model": didYouMean.getAttribute("source")
+            });
+        });
+    }
 }
 
 function logSERP() {
@@ -748,7 +781,8 @@ function logSERP() {
                 "user query": query,
                 rawQuery,
                 sanitizedQuery,
-                "suggested query": didYouMean.textContent
+                "suggested query": didYouMean.textContent,
+                "query_correction_model": didYouMean.getAttribute("source")
             });
         }
         searchResults.forEach(result => {
@@ -779,7 +813,8 @@ function logSERP() {
                 "user query": query,
                 rawQuery,
                 sanitizedQuery,
-                "suggested query": didYouMean.textContent
+                "suggested query": didYouMean.textContent,
+                "query_correction_model": didYouMean.getAttribute("source")
             });
         });
 
@@ -788,7 +823,8 @@ function logSERP() {
                 "user query": query,
                 rawQuery,
                 sanitizedQuery,
-                "suggested query": didYouMean.textContent
+                "suggested query": didYouMean.textContent,
+                "query_correction_model": didYouMean.getAttribute("source")
             });
         });
     }

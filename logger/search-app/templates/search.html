@@ -42,6 +42,11 @@
     </div>
 
     {% if no_results_message %}
+      {% if query == corrected_query %}
+      {% elif page==1 %}
+      <small class="container-info"><p>Forse cercavi: <a id="did-you-mean" source="{{query_correction_source}}" href="{{ url_for('result', query=corrected_query, page=1)|safe }}"><b>{{ corrected_query|safe }}</b></a></p></small>
+      {% else %}
+      {% endif %}
     <div class="no-results-inline"
          role="status"
          data-log-no-results="true"
@@ -54,7 +59,7 @@
     {% else %}
       {% if query == corrected_query %}
       {% elif page==1 %}
-      <small class="container-info"><p>Forse cercavi: <a id="did-you-mean" href="{{ url_for('result', query=corrected_query, page=1)|safe }}"><b>{{ corrected_query|safe }}</b></a></p></small>
+      <small class="container-info"><p>Forse cercavi: <a id="did-you-mean" source="{{query_correction_source}}" href="{{ url_for('result', query=corrected_query, page=1)|safe }}"><b>{{ corrected_query|safe }}</b></a></p></small>
       {% else %}
       {% endif %}
 
