@@ -195,9 +195,13 @@ def vertex_search(query, page, rpp, config):
         corrected_query = response.corrected_query
         query_correction_source = "vertex"
     else:
-        print("No corrected query from Vertex AI, falling back to python spellchecker")
-        query_correction_source = "pyspellchecker"
-        corrected_query = spellcheck_query(query)
+        # Empty corrected_query from Vertex = query needs no correction (Vertex
+        # failures return early above). Trust it; do NOT run the naive
+        # pyspellchecker, which mangles correct-but-rare Italian forms
+        # (e.g. "vulcaniche" -> "vulcanica").
+        print("No correction needed from Vertex AI")
+        query_correction_source = "none"
+        corrected_query = query
 
 
 
