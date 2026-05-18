@@ -199,7 +199,7 @@ a:hover {
 
 .welcome-logo-img {
   display: block;
-  width: min(520px, 85vw);
+  width: min(260px, 42.5vw);
   height: auto;
 }
 
@@ -288,9 +288,7 @@ a:hover {
 }
 
 .task-help-btn {
-  position: absolute;
-  bottom: 22px;
-  left: 22px;
+  flex: none;
   width: 48px;
   height: 48px;
   border-radius: 50%;

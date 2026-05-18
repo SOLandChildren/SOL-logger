@@ -12,6 +12,13 @@
 
       <form method="POST" action="{{ url_for('result') }}" id="search-bar" class="home-search-form">
         {{ form.hidden_tag() }}
+        {% if reminder %}
+        <button type="button"
+                id="task-help-btn"
+                class="task-help-btn"
+                data-task-number="{{ session.get('task_position', 0) + 1 }}"
+                aria-label="Mostra domanda del task">?</button>
+        {% endif %}
         <input
             type="search"
             name="query"
@@ -27,14 +34,6 @@
         {{ search_error or "Inserisci una domanda prima di cercare." }}
       </p>
     </div>
-
-    {% if reminder %}
-    <button type="button"
-            id="task-help-btn"
-            class="task-help-btn"
-            data-task-number="{{ session.get('task_position', 0) + 1 }}"
-            aria-label="Mostra domanda del task">?</button>
-    {% endif %}
   </section>
 
   {% if reminder %}
