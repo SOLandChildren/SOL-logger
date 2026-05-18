@@ -407,19 +407,63 @@ def result():
                                reminder=reminder,
                                search_error="Inserisci una domanda prima di cercare.")
 
+    # ---- Custom "Indietro" back-navigation history -----------------------
+    # nav_stack: ordered list of {"q","page"} views the participant actually
+    #            saw, chronological. Drives the back button.
+    # results_by_query: exact normalized result set per query in this task,
+    #            so going back replays what was shown (never a re-search).
+    back_nav = request.args.get("back") == "1"
+    nav_stack = list(session.get("nav_stack", []))
+    results_by_query = session.get("results_by_query", {})
+    NAV_STACK_CAP = 50
+
+    def record_view(view_query, view_page):
+        nonlocal nav_stack
+        if back_nav:
+            if nav_stack:
+                nav_stack = nav_stack[:-1]
+        else:
+            top = nav_stack[-1] if nav_stack else None
+            if (not top) or top.get("q") != view_query or top.get("page") != view_page:
+                nav_stack.append({"q": view_query, "page": view_page})
+                if len(nav_stack) > NAV_STACK_CAP:
+                    del nav_stack[:-NAV_STACK_CAP]
+        session["nav_stack"] = nav_stack
+
+    def back_url():
+        # Invariant: after record_view(), nav_stack[-1] is the current view.
+        if len(nav_stack) >= 2:
+            prev = nav_stack[-2]
+            return url_for('result', query=prev["q"], page=prev["page"], back=1)
+        return url_for('search_page')
+
+    def cache_query_results(results, total_pages, no_results_message=None):
+        results_by_query[query] = {
+            "results": results,
+            "raw_query": raw_query,
+            "corrected_query": corrected_query,
+            "query_correction_source": query_correction_source,
+            "total_pages": total_pages,
+            "no_results_message": no_results_message,
+        }
+        session["results_by_query"] = results_by_query
+
     def render_no_results(message, query_correction_source):
         session["search_results"] = []
         session["query"] = query
         session["raw_query"] = raw_query
         session["corrected_query"] = corrected_query
         session["query_correction_source"] = query_correction_source
+        cache_query_results([], 0, message)
+        record_view(query, 1)
         return render_template(SEARCH_URL, title="Search Results",
                                search_results=[], query=query,
                                raw_query=raw_query,
                                corrected_query=corrected_query, query_correction_source=query_correction_source, page=page,
                                total_pages=0, show_search=True,
                                reminder=reminder,
-                               no_results_message=message)
+                               no_results_message=message,
+                               back_url=back_url())
 
     def normalize_result(result):
         if not isinstance(result, dict):
@@ -431,19 +475,23 @@ def result():
         result.setdefault("link", "")
         return result
 
-    cached_results = session.get("search_results")
-    use_cached_results = (
-        request.method == "GET"
-        and session.get("query") == query
-        and isinstance(cached_results, list)
-    )
+    cached_for_query = results_by_query.get(query)
+    use_cached_results = request.method == "GET" and isinstance(cached_for_query, dict)
 
     if use_cached_results:
-        all_results = [normalize_result(result) for result in cached_results]
-        raw_query = session.get("raw_query", raw_query)
-        corrected_query = session.get("corrected_query", corrected_query)
-        query_correction_source = session.get("query_correction_source", query_correction_source)
+        all_results = [normalize_result(r) for r in cached_for_query.get("results", [])]
+        raw_query = cached_for_query.get("raw_query", raw_query)
+        corrected_query = cached_for_query.get("corrected_query", corrected_query)
+        query_correction_source = cached_for_query.get("query_correction_source", query_correction_source)
+        cached_no_results_message = cached_for_query.get("no_results_message")
+        # Keep the legacy single-slot mirror in sync for any other reader.
+        session["search_results"] = all_results
+        session["query"] = query
+        session["raw_query"] = raw_query
+        session["corrected_query"] = corrected_query
+        session["query_correction_source"] = query_correction_source
     else:
+        cached_no_results_message = None
         try:
             corrected_query, raw_results, _, query_correction_source = search_backend.search(query, page, rpp)
         except Exception:
@@ -462,11 +510,16 @@ def result():
         session["query_correction_source"] = query_correction_source
 
     if len(all_results) == 0:
-        return render_no_results("Non ci sono risultati per la vostra domanda. Provate a fare un'altra domanda!", query_correction_source=query_correction_source)
+        return render_no_results(
+            cached_no_results_message or "Non ci sono risultati per la vostra domanda. Provate a fare un'altra domanda!",
+            query_correction_source=query_correction_source)
 
     total_results = len(all_results)
     total_pages = min(10, math.ceil(total_results / rpp))
     page = min(page, total_pages)
+    if not use_cached_results:
+        cache_query_results(all_results, total_pages)
+    record_view(query, page)
     start = (page - 1) * rpp
     end = start + rpp
     return render_template(SEARCH_URL, title="Search Results",
@@ -474,7 +527,8 @@ def result():
                            query=query, raw_query=raw_query,
                            corrected_query=corrected_query,
                            page=page, total_pages=total_pages,
-                           show_search=True, reminder=reminder, query_correction_source=query_correction_source)
+                           show_search=True, reminder=reminder, query_correction_source=query_correction_source,
+                           back_url=back_url())
 
 @app.route("/webpage")
 def webpage():
@@ -855,6 +909,10 @@ def next_task():
     session.pop("raw_query", None)
     session.pop("corrected_query", None)
     session.pop("query_correction_source", None)
+    # Reset back-navigation history so a new task can never step back into
+    # the previous task's queries/results.
+    session.pop("results_by_query", None)
+    session.pop("nav_stack", None)
     
     if not has_next_task:
         return redirect(url_for('thank_you'))

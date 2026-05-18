@@ -2,7 +2,7 @@
 {% block content %}
 <div class="app-page">
   <div class="app-toolbar">
-    <a href="{% if page and page > 1 %}{{ url_for('result', query=query, page=page-1)|safe }}{% else %}{{ url_for('search_page') }}{% endif %}" id="serp-back-btn" class="app-btn app-btn-back">&larr; Indietro</a>
+    <a href="{{ (back_url or url_for('search_page'))|safe }}" id="serp-back-btn" class="app-btn app-btn-back">&larr; Indietro</a>
     {% if search_results or allow_answer_without_results_for_testing %}
       <button type="button"
               onclick="openFeedbackModal()"
