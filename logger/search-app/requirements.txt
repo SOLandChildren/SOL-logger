@@ -6,3 +6,4 @@ pyspellchecker
 Flask-Session
 Pillow
 google-cloud-discoveryengine
+gunicorn

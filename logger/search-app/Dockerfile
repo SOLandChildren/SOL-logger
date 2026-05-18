@@ -1,23 +1,21 @@
 FROM python:3.14.4-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV PIP_NO_CACHE_DIR=1
 
-# Install required system tools. Python is provided by the base image.
+WORKDIR /app
+
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         curl \
     && rm -rf /var/lib/apt/lists/*
 
-# ---- Diagnostic check (safe to keep or remove) ----
-RUN python --version && \
-    python -m pip --version && \
-    which python
-
 COPY requirements.txt requirements.txt
-RUN python -m pip install --no-cache-dir -r requirements.txt
+RUN python -m pip install -r requirements.txt
 
 COPY . .
 
 EXPOSE 7001
 
-ENTRYPOINT ["python", "search_app.py"]
+CMD ["gunicorn", "-w", "2", "--threads", "4", "-b", "0.0.0.0:7001", "search_app:app"]

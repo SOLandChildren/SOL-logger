@@ -13,8 +13,24 @@ Expected API_keys.json structure:
         "data_store_id": "datastore-sample_1776796569534",
         "language_code": "it",
         "autocomplete_query_model": "search-history"
+      },
+      "serp_api": {
+        "api_key": "<your-serpapi-key>"
       }
     }
+
+serp_api.api_key is the SerpAPI key used as the autocomplete fallback when
+Vertex AI autocomplete fails (and on the pyterrier backend). It is optional;
+if absent the fallback is disabled.
+SerpAPI autocomplete fallback can be tuned with SERP_AUTOCOMPLETE_HL
+(default "it"), SERP_AUTOCOMPLETE_GL (default "it"), and
+SERP_AUTOCOMPLETE_CLIENT (default "gws-wiz"); all are wired through
+docker-compose.yml and read once at startup. SERP_AUTOCOMPLETE_CLIENT
+selects the SerpAPI google_autocomplete client: "gws-wiz" gives
+google.com-search-box-style Italian suggestions; set "chrome"/"safari"
+for browser-style, "gws-wiz-serp" for the SERP variant, or run with an
+explicit empty value (e.g. docker compose run -e SERP_AUTOCOMPLETE_CLIENT=)
+to omit the client param entirely.
 
 NOTE: data_store_id and engine_id are different values.
   - engine_id     -> required by SearchService (search)
@@ -35,9 +51,31 @@ import re
 from google.cloud import discoveryengine_v1 as discoveryengine
 from google.api_core.client_options import ClientOptions
 
-DEFAULT_AUTOCOMPLETE_QUERY_MODEL = "document-completable"
-with open("API_keys.json") as f:
-    SERP_API_KEY = json.load(f)["serp_api"]["api_key"]
+DEFAULT_AUTOCOMPLETE_QUERY_MODEL = "search-history"
+DEFAULT_SERP_AUTOCOMPLETE_HL = "it"
+DEFAULT_SERP_AUTOCOMPLETE_GL = "it"
+DEFAULT_SERP_AUTOCOMPLETE_CLIENT = "gws-wiz"  # SerpAPI client; "" disables, also "chrome"/"safari"/"gws-wiz-serp"
+SERP_AUTOCOMPLETE_HL = os.getenv("SERP_AUTOCOMPLETE_HL", DEFAULT_SERP_AUTOCOMPLETE_HL)
+SERP_AUTOCOMPLETE_GL = os.getenv("SERP_AUTOCOMPLETE_GL", DEFAULT_SERP_AUTOCOMPLETE_GL)
+SERP_AUTOCOMPLETE_CLIENT = os.getenv("SERP_AUTOCOMPLETE_CLIENT", DEFAULT_SERP_AUTOCOMPLETE_CLIENT).strip()
+try:
+    with open("API_keys.json") as f:
+        SERP_API_KEY = json.load(f).get("serp_api", {}).get("api_key")
+except (FileNotFoundError, KeyError, json.JSONDecodeError):
+    SERP_API_KEY = None
+
+
+def serp_autocomplete_params(query):
+    params = {
+        "engine": "google_autocomplete",
+        "q": query,
+        "api_key": SERP_API_KEY,
+        "hl": SERP_AUTOCOMPLETE_HL,
+        "gl": SERP_AUTOCOMPLETE_GL,
+    }
+    if SERP_AUTOCOMPLETE_CLIENT:
+        params["client"] = SERP_AUTOCOMPLETE_CLIENT
+    return params
 
 
 # ---------------------------------------------------------------------------
@@ -157,9 +195,13 @@ def vertex_search(query, page, rpp, config):
         corrected_query = response.corrected_query
         query_correction_source = "vertex"
     else:
-        print("No corrected query from Vertex AI, falling back to python spellchecker")
-        query_correction_source = "pyspellchecker"
-        corrected_query = spellcheck_query(query)
+        # Empty corrected_query from Vertex = query needs no correction (Vertex
+        # failures return early above). Trust it; do NOT run the naive
+        # pyspellchecker, which mangles correct-but-rare Italian forms
+        # (e.g. "vulcaniche" -> "vulcanica").
+        print("No correction needed from Vertex AI")
+        query_correction_source = "none"
+        corrected_query = query
 
 
 
@@ -279,7 +321,7 @@ def pyterrier_search(query, page, rpp, db_url="http://search_engine:7002"):
     return corrected_query, itemlist, len(itemlist), "pyspellchecker"
 
 
-def pyterrier_autocomplete(query, MAX_SUGGESTIONS):
+def pyterrier_autocomplete(query, MAX_SUGGESTIONS=5):
     # """Stub. When SEARCH_BACKEND=pyterrier, autocomplete is disabled. To enable,
     # replace this function with a loader that prefix-matches against a curated
     # suggestions file (e.g. data/autocomplete_suggestions.json) or against the
@@ -287,15 +329,7 @@ def pyterrier_autocomplete(query, MAX_SUGGESTIONS):
     # return []
     response = requests.get(
             "https://serpapi.com/search.json",
-            params={
-                "engine": "google_autocomplete",
-                "q": query,
-                "api_key": SERP_API_KEY,
-                # uncomment for italian:
-                "hl": "it",
-                # "gl": "ch", # location set to Switzerland
-                "gl": "it", # location set to Italy
-            },
+            params=serp_autocomplete_params(query),
             timeout=5
         )
 

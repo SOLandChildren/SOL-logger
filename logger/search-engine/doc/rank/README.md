@@ -76,7 +76,7 @@ Download the LIVIVO-testset here: https://th-koeln.sciebo.de/s/OBm0NLEwz1RYl9N/d
 ## 4. Forking and cloning STELLA-microservice Template
 
 Before you start working on your own ranking-system, you should fork our template.  
-Navigate with your browser to our template repository https://github.com/stella-project/stella-micro-template and click the "fork"-button on the top right. This will create a fork in your personal github-account. 
+Navigate with your browser to our template repository https://github.com/stella-project/stella-micro-template and click the "fork"-button on the top right. This will create a fork in your personal github-account.
 Now navigate to your working directory and run the following command to clone the forked repository to your local system.
 
 ```bash
@@ -305,7 +305,7 @@ Now, you have to make sure, that all necessary packages are available in your vi
 ```shell
 pip install -r requirements.txt
 ```
-Don't push the folder ``venv`` which contains the virtual python environment to your github-repository. It's just for testing your Ranker on your local machine. 
+Don't push the folder ``venv`` which contains the virtual python environment to your github-repository. It's just for testing your Ranker on your local machine.
 
 ## 10. run ranker in virtual environment
 

@@ -25,7 +25,7 @@ app = Flask(__name__)
 # -------------------------------------------------
 # 1. Core app + session configuration FIRST
 # -------------------------------------------------
-app.config["SECRET_KEY"] = "OtulwLo7gQ"
+app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY") or "OtulwLo7gQ"
 
 app.config.update(
     SESSION_COOKIE_SECURE=False,      # True in production with HTTPS
@@ -53,6 +53,7 @@ SEARCH_BACKEND = os.getenv("SEARCH_BACKEND", "vertex").lower()
 LOG_DIR = 'logs'
 LOG_TIME_ZONE = ZoneInfo("Europe/Zurich")
 os.makedirs(LOG_DIR, exist_ok=True)
+LOG_REGISTRY_PATH = os.path.join(LOG_DIR, 'log_registry.jsonl')
 
 SERP_QUERY_FIELD_EVENTS = {
     'querySubmitted',
@@ -64,7 +65,6 @@ SERP_QUERY_FIELD_EVENTS = {
     'resultExposureStarted',
     'resultExposureEnded',
     'searchNoResults',
-    'wentBack',
     'generatedDidYouMean',
     'hoverOverDidYouMean',
     'clickedDidYouMeanSuggestion',
@@ -397,6 +397,8 @@ def result():
 
     rpp = 10 # results per page; may be changed later
     query = sanitize_query(raw_query)
+    corrected_query = query
+    query_correction_source = "none"
 
     if not query.strip():
         return render_template(HOME_URL,
@@ -558,41 +560,137 @@ def autocomplete():
         traceback.print_exc()
         return jsonify({"suggestions": [], "source": "none", "query_model": None}), 200
 
+def _append_log_registry(*, user_id, session_id, task_number, num_events,
+                         saved_log_filename, status, error=None):
+    """Append one summary line to logs/log_registry.jsonl. Never raises."""
+    try:
+        entry = {
+            "timestamp": datetime.now(LOG_TIME_ZONE).isoformat(timespec='milliseconds'),
+            "user_id": user_id,
+            "session_id": session_id,
+            "task_number": task_number,
+            "num_events": num_events,
+            "saved_log_filename": saved_log_filename,
+            "status": status,
+            "error": error,
+        }
+        with open(LOG_REGISTRY_PATH, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(entry) + '\n')
+    except Exception:
+        traceback.print_exc()
+
+
+def _write_incomplete_recovery(foreign_groups, recovered_from_user):
+    """Persist events left behind by a previous, unfinished participant.
+
+    ``foreign_groups`` maps (foreign_uid, client_session_id) -> list of that
+    participant's log entries that arrived mixed into another participant's
+    submission. Each group is appended to its own deterministic
+    ``<uid>_<sid>_INCOMPLETE.log`` file (so repeated recoveries accumulate
+    instead of spawning new files) and the file is closed with an
+    ``incompleteExperiment`` marker line. Returns a {uid: num_events} summary.
+    Never raises.
+    """
+    recovered_summary = {}
+    for (fuid, fsid), entries in foreign_groups.items():
+        try:
+            safe_fuid  = _sanitize_for_filename(fuid)
+            short_fsid = _sanitize_for_filename(fsid)[:8]
+            fname = f"{safe_fuid}_{short_fsid}_INCOMPLETE.log"
+            fpath = os.path.join(LOG_DIR, fname)
+            recovered_at = datetime.now(LOG_TIME_ZONE).isoformat(timespec='milliseconds')
+            with open(fpath, 'a', encoding='utf-8') as f:
+                for entry in entries:
+                    enriched = dict(entry)
+                    enriched['recovered']           = True
+                    enriched['recovered_from_user'] = recovered_from_user
+                    enriched['recovered_at']        = recovered_at
+                    f.write(json.dumps(enriched) + '\n')
+                f.write(json.dumps({
+                    "type": "incompleteExperiment",
+                    "uid": fuid,
+                    "sessionID": fsid,
+                    "recovered_from_user": recovered_from_user,
+                    "recovered_at": recovered_at,
+                }) + '\n')
+            print(
+                f"[log] RECOVER incomplete uid={fuid} session={fsid} "
+                f"events={len(entries)} file={fname} recovered_from={recovered_from_user}"
+            )
+            _append_log_registry(
+                user_id=fuid, session_id=fsid, task_number=None,
+                num_events=len(entries), saved_log_filename=fname,
+                status="incomplete", error=f"recovered-from:{recovered_from_user}",
+            )
+            recovered_summary[fuid] = recovered_summary.get(fuid, 0) + len(entries)
+        except Exception:
+            traceback.print_exc()
+    return recovered_summary
+
+
 @app.route('/log_session', methods=['POST'])
 def log_session():
-    print("Received /log_session request")
     data = request.get_json(force=False, silent=True) or {}
-    print(f"Request JSON data: {data}")
 
     session_id = data.get('session_id')
     logs = data.get('logs')
-    
+    num_events = len(logs) if isinstance(logs, list) else 0
+
     user_id = session.get('user_id')
     task_number = session.get('task_number')
     server_session_id = session.get('session_id')
-    print(f"user_id: {user_id}, task_number: {task_number}, session_id: {session_id}")
+
     if not (user_id and task_number and session_id and isinstance(logs, list) and logs):
-        print("Missing required data: user_id, task_number, session_id or logs")
+        print(f"[log] ERROR missing-data user={user_id} session={session_id} task={task_number}")
+        _append_log_registry(
+            user_id=user_id, session_id=session_id, task_number=task_number,
+            num_events=num_events, saved_log_filename=None,
+            status="error", error="missing-data",
+        )
         return jsonify({"error": "Missing user_id, task_number, session_id or logs"}), 400
 
     if session_id != server_session_id:
         print(
-            "[Logging REJECT] client/server session mismatch: "
-            f"client={session_id}, server={server_session_id}, user_id={user_id}"
+            f"[log] REJECT session-mismatch user={user_id} "
+            f"client={session_id} server={server_session_id}"
+        )
+        _append_log_registry(
+            user_id=user_id, session_id=session_id, task_number=task_number,
+            num_events=num_events, saved_log_filename=None,
+            status="error", error="session-mismatch",
         )
         return jsonify({"error": "Session mismatch"}), 409
 
-    mismatched_uids = [
-        entry.get('uid')
-        for entry in logs
-        if isinstance(entry, dict) and entry.get('uid') and entry.get('uid') != user_id
-    ]
-    if mismatched_uids:
-        print(
-            "[Logging REJECT] log uid/server user mismatch: "
-            f"log_uids={sorted(set(mismatched_uids))}, server_user={user_id}"
-        )
-        return jsonify({"error": "User mismatch"}), 409
+    # If events from a different participant (a previous, unfinished session on
+    # the same device) arrived mixed into this submission, never reject the
+    # batch — the old behaviour lost the real participant's data too. Keep the
+    # current participant's events (and uid-less / generic ones) for the normal
+    # log, and recover the other participant's events into their own
+    # incomplete-experiment log instead of discarding them.
+    own_logs = []
+    foreign_groups = {}
+    for entry in logs:
+        euid = entry.get('uid') if isinstance(entry, dict) else None
+        if euid and euid != user_id:
+            esid = entry.get('sessionID') or 'nosession'
+            foreign_groups.setdefault((euid, esid), []).append(entry)
+        else:
+            own_logs.append(entry)
+
+    recovered_incomplete = {}
+    if foreign_groups:
+        recovered_incomplete = _write_incomplete_recovery(foreign_groups, user_id)
+        logs = own_logs
+        num_events = len(logs)
+        if not logs:
+            # The whole batch belonged to a previous participant; it has been
+            # recovered. Return OK so the client clears its buffer and the
+            # study can proceed.
+            return jsonify({
+                "status": "logged",
+                "saved_events": 0,
+                "recovered_incomplete": recovered_incomplete,
+            }), 200
 
     warn_logging_contract_issues(logs, task_number)
 
@@ -628,10 +726,41 @@ def log_session():
             full_f.write(line)
             task_f.write(line)
 
+    is_last_task = bool(task_order) and session.get("task_position", 0) >= len(task_order) - 1
+    is_session_end = any(
+        isinstance(e, dict) and e.get("type") == "experimentFinished"
+        for e in logs
+    )
+
+    if is_session_end:
+        marker = "SESSION_END"
+    elif is_last_task:
+        marker = "LAST_TASK"
+    else:
+        marker = None
+
+    if marker:
+        print(
+            f"[log] OK {marker} user={user_id} session={session_id} "
+            f"task={visible_task_number}/{len(task_order) or '?'} events={num_events} "
+            f"task_file={task_filename} full_file={combined_filename}"
+        )
+    else:
+        print(
+            f"[log] OK user={user_id} session={session_id} "
+            f"task={visible_task_number} events={num_events} file={task_filename}"
+        )
+    _append_log_registry(
+        user_id=user_id, session_id=session_id, task_number=visible_task_number,
+        num_events=num_events, saved_log_filename=task_filename,
+        status="success", error=None,
+    )
+
     return jsonify({
         "status":        "logged",
         "combined_file": combined_filename,
         "task_file":     task_filename,
+        "recovered_incomplete": recovered_incomplete,
     }), 200
 
 def warn_logging_contract_issues(logs, default_task_number):
@@ -676,14 +805,14 @@ def warn_logging_contract_issues(logs, default_task_number):
                 f"at log entry {index}: {entry}"
             )
 
-        if event_type == 'wentBack':
+        if event_type in ('browserBackBlocked', 'customBackButtonClicked'):
             missing_fields = [
-                field for field in ('fromURL', 'toURL', 'returnType')
+                field for field in ('fromURL', 'toURL')
                 if not entry.get(field)
             ]
             if missing_fields:
                 print(
-                    "[Logging WARN] wentBack missing fields "
+                    f"[Logging WARN] {event_type} missing navigation fields "
                     f"{missing_fields} at log entry {index}: {entry}"
                 )
 
@@ -725,6 +854,7 @@ def next_task():
     session.pop("query", None)
     session.pop("raw_query", None)
     session.pop("corrected_query", None)
+    session.pop("query_correction_source", None)
     
     if not has_next_task:
         return redirect(url_for('thank_you'))
@@ -819,4 +949,5 @@ def internal_error(e):
                            error_message="Something went wrong on our end. Please try again."), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=7001, threaded=True, debug=False)
+    debug = os.getenv("FLASK_DEBUG", "0") == "1"
+    app.run(host='0.0.0.0', port=7001, threaded=True, debug=debug)

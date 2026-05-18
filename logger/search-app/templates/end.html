@@ -9,6 +9,10 @@
     <p>Hai raccolto tutti i pezzi del puzzle. Ora puoi scoprire il premio finale.</p>
 
     <div class="final-reward-stage">
+        <div class="sol-loader is-pending" id="final-loader" aria-live="polite">
+            <div class="sol-loader__spinner" aria-hidden="true"></div>
+            <div class="sol-loader__text">Caricamento…</div>
+        </div>
         <div id="final-reward-container" class="final-reward-container is-locked">
         {% if full_puzzle_static_filename.lower().endswith('.mp4') %}
         <video class="final-reward-media"
@@ -53,6 +57,40 @@ document.addEventListener("DOMContentLoaded", () => {
         studyLogger.logEvent("sessionCompleted", {
             totalTasks: {{ total_tasks }}
         });
+    }
+
+    const finalLoader = document.getElementById("final-loader");
+    if (finalLoader) {
+        let shown = false;
+        const t = window.setTimeout(() => {
+            finalLoader.classList.remove("is-pending");
+            shown = true;
+        }, 250);
+
+        const hideFinal = () => {
+            window.clearTimeout(t);
+            finalLoader.classList.add("is-hidden");
+            if (!shown) finalLoader.classList.add("is-pending");
+        };
+
+        const media = document.querySelector(".final-reward-media");
+        if (!media) {
+            hideFinal();
+        } else if (media.tagName === "VIDEO") {
+            if (media.readyState >= 2) {
+                hideFinal();
+            } else {
+                media.addEventListener("loadeddata", hideFinal, { once: true });
+                media.addEventListener("error", hideFinal, { once: true });
+            }
+        } else {
+            if (media.complete && media.naturalWidth > 0) {
+                hideFinal();
+            } else {
+                media.addEventListener("load", hideFinal, { once: true });
+                media.addEventListener("error", hideFinal, { once: true });
+            }
+        }
     }
 
     const revealBtn = document.getElementById("final-reward-reveal-btn");
