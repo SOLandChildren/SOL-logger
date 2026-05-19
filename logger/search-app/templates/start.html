@@ -7,12 +7,15 @@
 
   <section class="app-panel id-panel">
     <div class="id-form-wrap">
-      <p class="form-label-strong">Inserisci il numero che trovi scritto dietro al tablet</p>
+      <p class="form-label-strong">Seleziona il numero che trovi scritto dietro al tablet</p>
     <form method="POST" id="enter-id-form">
-        <input list="id-suggestions" type="text" name="user_id" class="form-control app-input id-input" id="id-box"
-            placeholder="ID" required autocomplete="off" />
-        <datalist id="id-suggestions"></datalist>
-        <p id="error-message" class="form-error" style="display: none;">ID non valido</p>
+        <select name="user_id" class="form-control app-input id-input" id="id-box" required>
+            <option value="" disabled selected>Seleziona il numero…</option>
+            {% for id in valid_ids %}
+            <option value="{{ id }}">{{ id }}</option>
+            {% endfor %}
+        </select>
+        <p id="error-message" class="form-error" style="display: none;">Seleziona un numero</p>
         <button class="app-btn app-btn-primary" id="continue-btn" type="submit">Continua</button>
     </form>
     </div>
@@ -22,41 +25,17 @@
 <script>
   const validIDs = {{ valid_ids | tojson }};
   const input = document.getElementById("id-box");
-  const datalist = document.getElementById("id-suggestions");
   const form = document.getElementById("enter-id-form");
   const errorMsg = document.getElementById("error-message");
 
-  input.addEventListener("focus", () => {
-    datalist.innerHTML = "";
-    validIDs.forEach(id => {
-      const option = document.createElement("option");
-      option.value = id;
-      datalist.appendChild(option);
-    });
-  });
-
-  input.addEventListener("input", () => {
-    const query = input.value.toLowerCase();
-    datalist.innerHTML = "";
-    const filtered = validIDs.filter(id => id.toLowerCase().startsWith(query));
-    filtered.forEach(id => {
-      const option = document.createElement("option");
-      option.value = id;
-      datalist.appendChild(option);
-    });
-    errorMsg.style.display = "none";
-  });
-
   input.addEventListener("change", () => {
-    if (validIDs.includes(input.value)) {
-      datalist.innerHTML = ""; 
-    }
+    errorMsg.style.display = "none";
   });
 
   form.addEventListener("submit", function(e) {
     if (!validIDs.includes(input.value)) {
       errorMsg.style.display = "block";
-      e.preventDefault(); 
+      e.preventDefault();
     }
   });
 </script>

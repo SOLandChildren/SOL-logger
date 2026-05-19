@@ -2,7 +2,7 @@
 {% block content %}
 <div class="app-page">
   <div class="app-toolbar">
-    <a href="{{ url_for('search_page') }}" id="serp-back-btn" class="app-btn app-btn-back">&larr; Indietro</a>
+    <a href="{{ (back_url or url_for('search_page'))|safe }}" id="serp-back-btn" class="app-btn app-btn-back">&larr; Indietro</a>
     {% if search_results or allow_answer_without_results_for_testing %}
       <button type="button"
               onclick="openFeedbackModal()"
@@ -26,6 +26,13 @@
 
       <form method="POST" action="{{ url_for('result') }}" id="search-bar" class="home-search-form">
         {{ form.hidden_tag() }}
+        {% if reminder %}
+        <button type="button"
+                id="task-help-btn"
+                class="task-help-btn"
+                data-task-number="{{ session.get('task_position', 0) + 1 }}"
+                aria-label="Mostra domanda del task">?</button>
+        {% endif %}
         <input
             type="search"
             name="query"
@@ -124,14 +131,6 @@
   </ul>
 </nav>
 {% endif %}
-    {% endif %}
-
-    {% if reminder %}
-    <button type="button"
-            id="task-help-btn"
-            class="task-help-btn"
-            data-task-number="{{ session.get('task_position', 0) + 1 }}"
-            aria-label="Mostra domanda del task">?</button>
     {% endif %}
   </section>
 

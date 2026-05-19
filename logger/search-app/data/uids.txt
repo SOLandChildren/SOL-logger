@@ -14,5 +14,3 @@
 14
 15
 16
-UserTestLog1
-UserTestLog2
