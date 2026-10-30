@@ -7,10 +7,10 @@ PyTerrier service via the SEARCH_BACKEND environment variable.
 Expected API_keys.json structure:
     {
       "vertex_ai": {
-        "project_number": "425294702501",
+        "project_number": "",
         "location": "global",
-        "engine_id": "sol-test-2_1776796467056",
-        "data_store_id": "datastore-sample_1776796569534",
+        "engine_id": "",
+        "data_store_id": ",
         "language_code": "it",
         "autocomplete_query_model": "search-history"
       },
