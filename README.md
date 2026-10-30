@@ -1,4 +1,4 @@
-[LUNA - <u>L</u>earning How Young <u>U</u>sers <u>N</u>avigate When <u>A</u>ccessing Online Information](https://anonymous.4open.science/r/child-search-logger/)
+[LUNA - <u>L</u>earning How Young <u>U</u>sers <u>N</u>avigate When <u>A</u>ccessing Online Information](https://anonymous.4open.science/r/child-search-logger/README.md)
 
 This repository accompanies the demo paper submission "LUNA - <u>L</u>earning How Young <u>U</u>sers <u>N</u>avigate When <u>A</u>ccessing Online Information" for CHIIR 2027. It contains the full setup of LUNA used for a use case pertaining to children's information seeking in the classroom. This enables others to either reproduce our results or adapt the platform for their own study.
 
