@@ -1,0 +1,12 @@
+{
+  "vertex_ai": {
+    "project_number": "",
+    "location": "global",
+    "engine_id": "",
+    "data_store_id": "",
+    "language_code": "it"
+  },
+   "serp_api": {
+     "api_key" : ""
+  }
+}
